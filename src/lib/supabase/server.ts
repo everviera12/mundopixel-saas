@@ -9,7 +9,7 @@ import { cookies } from 'next/headers'
         4. Crea el cliente de Supabase y configura la gestión de cookies para mantener sincronizada la sesión del usuario.
 */}
 
-export async function createClient() {
+export async function createServer() {
     const cookieStore = await cookies()
     console.log(cookieStore);
 
