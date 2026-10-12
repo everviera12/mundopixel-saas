@@ -68,3 +68,22 @@ export async function signUpNewUser(_prevState: AuthStateProps, formData: FormDa
         success: "Check your email to confirm your account.",
     };
 }
+
+export async function signOut() {
+    const supabase = await createServer()
+    const { error } = await supabase.auth.signOut();
+
+    if (error) {
+        return {
+            error: error.message,
+            success: null
+        };
+    }
+
+    // return {
+    //     error: null,
+    //     success: "Signed out successfully.",
+    // };
+
+    redirect('/auth/login')
+}
