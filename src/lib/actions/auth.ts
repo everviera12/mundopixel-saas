@@ -13,7 +13,9 @@ export async function signInWithEmail(_prevState: AuthStateProps, formData: Form
     const password = String(formData.get("password") ?? "");
 
     if (!email || !password) {
-        return { error: "Email and password are required.", success: null };
+        return {
+            error: "El correo o la contraseña son incorrectos.", success: null
+        };
     }
 
     const supabase = await createServer()
