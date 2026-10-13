@@ -10,8 +10,7 @@ import { cookies } from 'next/headers'
 */}
 
 export async function createServer() {
-    const cookieStore = await cookies()
-    console.log(cookieStore);
+    const cookieStore = await cookies();
 
     return createServerClient(
         process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -19,22 +18,19 @@ export async function createServer() {
         {
             cookies: {
                 getAll() {
-                    return cookieStore.getAll()
+                    return cookieStore.getAll();
                 },
-                setAll(cookiesToSet, _headers) {
-                    console.log("_headers: ", _headers);
-
+                setAll(cookiesToSet) {
                     try {
-                        cookiesToSet.forEach(({ name, value, options }) =>
-                            cookieStore.set(name, value, options)
-                        )
+                        cookiesToSet.forEach(({ name, value, options }) => {
+                            cookieStore.set(name, value, options);
+                        });
                     } catch {
-                        // The `setAll` method was called from a Server Component.
-                        // This can be ignored if you have a proxy refreshing
-                        // user sessions.
+                        // Las Server Components no pueden escribir cookies.
+                        // El proxy debe encargarse de actualizar la sesión.
                     }
                 },
             },
-        }
-    )
+        },
+    );
 }
