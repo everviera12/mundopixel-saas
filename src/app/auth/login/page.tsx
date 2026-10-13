@@ -36,7 +36,7 @@ export default function LoginPage() {
                             <Field>
                                 <div className="flex items-center">
                                     <FieldLabel htmlFor="password">Contraseña</FieldLabel>
-                                    <Link href="#" className="ml-auto text-sm underline-offset-2 hover:underline">¿Olvidaste tu contraseña?</Link>
+                                    <Link href="/auth/account/forgot-password" className="ml-auto text-sm underline-offset-2 hover:underline">¿Olvidaste tu contraseña?</Link>
                                 </div>
                                 <Input id="password" name="password" type="password" autoComplete="current-password" required />
                             </Field>
