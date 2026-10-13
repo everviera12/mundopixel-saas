@@ -134,3 +134,43 @@ export async function getUserInfo(): Promise<UserProps> {
         data: user
     };
 }
+
+export async function forgotPassword(_prevState: AuthStateProps, formData: FormData,): Promise<AuthStateProps> {
+    const email = String(formData.get("email") ?? "").trim();
+
+    if (!email) {
+        return {
+            error: "El campo de correo electrónico es obligatorio.", success: null
+        };
+    }
+
+    const supabase = await createServer();
+    const siteUrl = process.env.NEXT_PUBLIC_SITE_URL;
+
+    if (!siteUrl) {
+        return {
+            error: "No se ha configurado la URL de la aplicación.",
+            success: null,
+        };
+    }
+
+    const { error } = await supabase.auth.resetPasswordForEmail(email, {
+        redirectTo: `${siteUrl}/auth/account/update-password`,
+    });
+
+
+
+    if (error) {
+        console.log("Error al enviar recuperación", error);
+
+        return {
+            error: error.message,
+            success: null,
+        };
+    }
+
+    return {
+        error: null,
+        success: "Si existe una cuenta con ese correo, recibirás un enlace para restablecer tu contraseña.",
+    };
+}
