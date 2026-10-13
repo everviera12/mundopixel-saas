@@ -1,11 +1,17 @@
 'use server'
 
+import type { User } from "@supabase/supabase-js";
+
 import { redirect } from "next/navigation";
 import { createServer } from "../supabase/server";
 
 type AuthStateProps = {
     error: string | null;
     success: string | null;
+};
+
+type UserProps = AuthStateProps & {
+    data: User | null;
 };
 
 export async function signInWithEmail(_prevState: AuthStateProps, formData: FormData,): Promise<AuthStateProps> {
@@ -41,6 +47,9 @@ export async function signInWithEmail(_prevState: AuthStateProps, formData: Form
 }
 
 export async function signUpNewUser(_prevState: AuthStateProps, formData: FormData,): Promise<AuthStateProps> {
+    const first_name = String(formData.get("first_name") ?? "");
+    const last_name = String(formData.get("last_name") ?? "");
+
     const email = String(formData.get("email") ?? "");
     const password = String(formData.get("password") ?? "");
 
@@ -54,7 +63,11 @@ export async function signUpNewUser(_prevState: AuthStateProps, formData: FormDa
         email,
         password,
         options: {
-            emailRedirectTo: '/confirmed'
+            data: {
+                first_name: first_name,
+                last_name: last_name,
+            },
+            emailRedirectTo: '/confirmed' // -> Cambiar a URL valida con SSL
         }
     });
 
@@ -71,15 +84,12 @@ export async function signUpNewUser(_prevState: AuthStateProps, formData: FormDa
     };
 }
 
-export async function signOut() {
+export async function signOut(): Promise<void> {
     const supabase = await createServer()
     const { error } = await supabase.auth.signOut();
 
     if (error) {
-        return {
-            error: error.message,
-            success: null
-        };
+        throw new Error(error.message);
     }
 
     // return {
@@ -88,4 +98,24 @@ export async function signOut() {
     // };
 
     redirect('/auth/login')
+}
+
+export async function getUserInfo(): Promise<UserProps> {
+    const supabase = await createServer()
+
+    const { data: { user }, error } = await supabase.auth.getUser();
+
+    if (error || !user) {
+        return {
+            error: error?.message ?? "No se encontró un usuario autenticado.",
+            success: null,
+            data: null,
+        };
+    }
+
+    return {
+        error: null,
+        success: "Usuario obtenido correctamente.",
+        data: user
+    };
 }

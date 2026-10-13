@@ -17,6 +17,20 @@ export default function SignUpPage() {
 
             <form action={formAction} className="grid max-w-sm gap-4">
                 <input
+                    type="text"
+                    name="first_name"
+                    placeholder="First Name"
+                    required
+                />
+
+                <input
+                    type="text"
+                    name="last_name"
+                    placeholder="Last Name"
+                    required
+                />
+
+                <input
                     type="email"
                     name="email"
                     placeholder="Email"
@@ -42,7 +56,6 @@ export default function SignUpPage() {
             </form>
 
             <Link href={'/auth/login'}>Login</Link>
-
         </main>
     );
 }
