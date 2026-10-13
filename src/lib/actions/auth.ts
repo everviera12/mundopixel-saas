@@ -52,6 +52,21 @@ export async function signUpNewUser(_prevState: AuthStateProps, formData: FormDa
 
     const email = String(formData.get("email") ?? "");
     const password = String(formData.get("password") ?? "");
+    const confirmPassword = formData.get("confirm_password");
+
+    if (password !== confirmPassword) {
+        return {
+            error: "Las contraseñas no coinciden.",
+            success: null,
+        };
+    }
+
+    if (password.length < 8) {
+        return {
+            error: "La contraseña debe tener al menos 8 caracteres.",
+            success: null,
+        };
+    }
 
     if (!email || !password) {
         return { error: "Email and password are required.", success: null };
@@ -80,7 +95,7 @@ export async function signUpNewUser(_prevState: AuthStateProps, formData: FormDa
 
     return {
         error: null,
-        success: "Check your email to confirm your account.",
+        success: "Revisa tu correo electrónico para confirmar tu cuenta.",
     };
 }
 
