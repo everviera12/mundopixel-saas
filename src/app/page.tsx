@@ -26,7 +26,7 @@ export default function HomePage() {
             </Suspense>
 
             <form action={signOut}>
-                <Button variant={'destructive'}>Sign Out</Button>
+                <Button type="submit" variant={'destructive'}>Sign Out</Button>
             </form>
         </div>
     );
