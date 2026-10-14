@@ -174,3 +174,38 @@ export async function forgotPassword(_prevState: AuthStateProps, formData: FormD
         success: "Si existe una cuenta con ese correo, recibirás un enlace para restablecer tu contraseña.",
     };
 }
+
+export async function updatePassword(_prevState: AuthStateProps, formData: FormData,): Promise<AuthStateProps> {
+    const password = String(formData.get("password") ?? "");
+    const confirmPassword = String(formData.get("confirm_password") ?? "");
+
+    if (!password || !confirmPassword) {
+        return { error: "Por favor, ingresa ambas contraseñas", success: null };
+    }
+
+    if (password !== confirmPassword) {
+        return {
+            error: "Las contraseñas no coinciden",
+            success: null,
+        };
+    }
+
+    if (password.length < 8) {
+        return {
+            error: "La contraseña debe tener al menos 8 caracteres",
+            success: null,
+        };
+    }
+
+    const supabase = await createServer();
+    const { error } = await supabase.auth.updateUser({ password });
+
+    if (error) {
+        return { error: error.message, success: null };
+    }
+
+    return {
+        error: null,
+        success: "Tu contraseña se actualizó correctamente",
+    };
+}
