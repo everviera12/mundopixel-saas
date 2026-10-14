@@ -18,10 +18,7 @@ export default function ForgotPasswordPage() {
     const [state, formAction, isPending] = useActionState(forgotPassword, {
         error: null,
         success: null,
-    });
-
-    console.log(state.error);
-    
+    });    
 
     return (
         <div className="mx-auto w-full max-w-md p-6">
