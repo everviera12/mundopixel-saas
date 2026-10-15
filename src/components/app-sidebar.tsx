@@ -100,7 +100,7 @@ export function AppSidebar({ data }: UserProps) {
                                 <DropdownMenuGroup>
                                     <DropdownMenuItem
                                         render={
-                                            <Link href="#" className="w-full" />
+                                            <Link href="/profile" className="w-full" />
                                         }
                                     >
                                         Account
