@@ -1,3 +1,5 @@
+"use client";
+
 import {
     Sidebar,
     SidebarContent,
@@ -7,11 +9,10 @@ import {
     SidebarMenu,
     SidebarMenuButton,
     SidebarMenuItem,
+    useSidebar,
 } from "@/components/ui/sidebar";
 import { User } from "@supabase/supabase-js";
-import { Button } from "./ui/button";
 import { signOut } from "@/lib/actions/auth";
-import { useIsMobile } from "@/hooks/use-mobile";
 import {
     DropdownMenu,
     DropdownMenuContent,
@@ -21,22 +22,24 @@ import {
     DropdownMenuSeparator,
     DropdownMenuTrigger,
 } from "./ui/dropdown-menu";
+import Link from "next/link";
 
 type UserProps = {
     data: User | null | undefined;
 };
 
 export function AppSidebar({ data }: UserProps) {
-    console.log("Users from app-sidebar", data);
+    const { isMobile } = useSidebar();
 
     const user = data?.user_metadata;
-    console.log("User Information:", user);
+    const displayName = user?.first_name ?? "Usuario";
+    const initial = displayName.charAt(0).toUpperCase();
 
     return (
-        <Sidebar className="h-svh">
+        <Sidebar>
             <SidebarHeader className="shrink-0 border-b border-sidebar-border px-4 py-4" />
 
-            <SidebarContent className="min-h-0 flex-1 overflow-y-auto">
+            <SidebarContent>
                 <SidebarGroup />
                 <SidebarGroup />
             </SidebarContent>
@@ -45,61 +48,74 @@ export function AppSidebar({ data }: UserProps) {
                 <SidebarMenu>
                     <SidebarMenuItem>
                         <DropdownMenu>
-                            <DropdownMenuTrigger>
-                                <SidebarMenuButton>
-                                    <div className="grid min-w-0 flex-1 text-left text-sm leading-tight">
-                                        <span className="truncate font-medium">{user?.first_name ?? "Usuario"}</span>
-                                        <span className="truncate text-xs">{data?.email ?? ""}</span>
-                                    </div>
-                                </SidebarMenuButton>
+                            <DropdownMenuTrigger
+                                render={
+                                    <SidebarMenuButton
+                                        size="lg"
+                                        className="data-popup-open:bg-sidebar-accent data-popup-open:text-sidebar-accent-foreground"
+                                    />
+                                }
+                            >
+                                <div className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-muted text-sm font-medium text-muted-foreground">
+                                    {initial}
+                                </div>
+                                <div className="grid min-w-0 flex-1 text-left font-heading text-sm leading-tight">
+                                    <span className="truncate font-medium">{displayName}</span>
+                                    <span className="truncate text-xs text-muted-foreground">
+                                        {data?.email ?? ""}
+                                    </span>
+                                </div>
                             </DropdownMenuTrigger>
 
                             <DropdownMenuContent
-                                // side={useIsMobile ? "bottom" : "right"}
-                                side="right"
+                                className="font-heading min-w-56"
+                                side={isMobile ? "bottom" : "right"}
                                 align="end"
                                 sideOffset={8}
                             >
-                                <DropdownMenuLabel className="p-0 font-normal">
-                                    <div className="flex items-center gap-3 px-3 py-3">
-                                        <div className="">
-                                            {user?.first_name?.charAt(0)?.toUpperCase() ?? "U"}
-                                        </div>
-
-                                        <div className="grid min-w-0 flex-1 text-left text-sm leading-tight">
-                                            <span className="truncate font-medium">{user?.first_name ?? "Usuario"}</span>
-                                            <span className="truncate text-xs">{data?.email ?? ""}</span>
-                                        </div>
-                                    </div>
-                                </DropdownMenuLabel>
-
-                                <DropdownMenuSeparator className="bg-white/10" />
-
                                 <DropdownMenuGroup>
-                                    <DropdownMenuItem className="cursor-pointer rounded-md focus:bg-white/10 focus:text-white">
+                                    <DropdownMenuLabel className="p-0">
+                                        <div className="flex items-center gap-2.5 px-3 py-2 text-left text-sm">
+                                            <div className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-muted text-sm font-medium text-muted-foreground">
+                                                {initial}
+                                            </div>
+                                            <div className="grid min-w-0 flex-1 leading-tight">
+                                                <span className="truncate font-medium text-foreground">{displayName}</span>
+                                                <span className="truncate text-xs text-muted-foreground">
+                                                    {data?.email ?? ""}
+                                                </span>
+                                            </div>
+                                        </div>
+                                    </DropdownMenuLabel>
+                                </DropdownMenuGroup>
+
+                                <DropdownMenuSeparator />
+
+                                {/* <DropdownMenuGroup>
+                                    <DropdownMenuItem>
                                         Upgrade to Pro
                                     </DropdownMenuItem>
-                                </DropdownMenuGroup>
-
-                                <DropdownMenuSeparator className="bg-white/10" />
+                                </DropdownMenuGroup> */}
 
                                 <DropdownMenuGroup>
-                                    <DropdownMenuItem className="cursor-pointer rounded-md focus:bg-white/10 focus:text-white">
+                                    <DropdownMenuItem render={<Link href="#" className="w-full" />}>
                                         Account
                                     </DropdownMenuItem>
-                                    <DropdownMenuItem className="cursor-pointer rounded-md focus:bg-white/10 focus:text-white">
-                                        Billing
-                                    </DropdownMenuItem>
-                                    <DropdownMenuItem className="cursor-pointer rounded-md focus:bg-white/10 focus:text-white">
-                                        Notifications
-                                    </DropdownMenuItem>
+                                    <DropdownMenuItem>Billing</DropdownMenuItem>
+                                    <DropdownMenuItem>Notifications</DropdownMenuItem>
                                 </DropdownMenuGroup>
 
-                                <DropdownMenuSeparator className="bg-white/10" />
+                                <DropdownMenuSeparator />
 
-                                <DropdownMenuItem className="cursor-pointer rounded-md text-red-400 focus:bg-red-500/10 focus:text-red-400">
-                                    Log out
-                                </DropdownMenuItem>
+                                <form action={signOut}>
+                                    <DropdownMenuItem
+                                        variant="destructive"
+                                        nativeButton
+                                        render={<button type="submit" className="w-full" />}
+                                    >
+                                        Log out
+                                    </DropdownMenuItem>
+                                </form>
                             </DropdownMenuContent>
                         </DropdownMenu>
                     </SidebarMenuItem>
