@@ -98,11 +98,15 @@ export function AppSidebar({ data }: UserProps) {
                                 </DropdownMenuGroup> */}
 
                                 <DropdownMenuGroup>
-                                    <DropdownMenuItem render={<Link href="#" className="w-full" />}>
+                                    <DropdownMenuItem
+                                        render={
+                                            <Link href="#" className="w-full" />
+                                        }
+                                    >
                                         Account
                                     </DropdownMenuItem>
-                                    <DropdownMenuItem>Billing</DropdownMenuItem>
-                                    <DropdownMenuItem>Notifications</DropdownMenuItem>
+                                    {/* <DropdownMenuItem>Billing</DropdownMenuItem>
+                                    <DropdownMenuItem>Notifications</DropdownMenuItem> */}
                                 </DropdownMenuGroup>
 
                                 <DropdownMenuSeparator />
