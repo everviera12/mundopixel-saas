@@ -10,9 +10,12 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         <SidebarProvider>
             <AppSidebar data={data} />
 
-            <div className="p-5 grid gap-6">
+            <div className="w-full px-5 py-8">
+                <div className="rounded-4xl px-5 py-8">
+                    {children}
+                </div>
+                
                 {/* <SidebarTrigger /> */}
-                {children}
             </div>
         </SidebarProvider>
     );
