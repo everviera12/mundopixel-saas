@@ -5,6 +5,7 @@ import {
     SidebarContent,
     SidebarFooter,
     SidebarGroup,
+    SidebarGroupLabel,
     SidebarHeader,
     SidebarMenu,
     SidebarMenuButton,
@@ -40,8 +41,16 @@ export function AppSidebar({ data }: UserProps) {
             <SidebarHeader className="shrink-0 border-b border-sidebar-border px-4 py-4" />
 
             <SidebarContent>
-                <SidebarGroup />
-                <SidebarGroup />
+                <SidebarGroup>
+                    <SidebarGroupLabel>Sucursales</SidebarGroupLabel>
+                    <SidebarMenu>
+                        <SidebarMenuItem>
+                            <SidebarMenuButton render={<Link href="/sucursales" className="w-full" />}>
+                                Agregar sucursal
+                            </SidebarMenuButton>
+                        </SidebarMenuItem>
+                    </SidebarMenu>
+                </SidebarGroup>
             </SidebarContent>
 
             <SidebarFooter>
@@ -59,7 +68,7 @@ export function AppSidebar({ data }: UserProps) {
                                 <div className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-muted text-sm font-medium text-muted-foreground">
                                     {initial}
                                 </div>
-                                <div className="grid min-w-0 flex-1 text-left font-heading text-sm leading-tight">
+                                <div className="grid min-w-0 flex-1 text-left text-sm leading-tight">
                                     <span className="truncate font-medium">{displayName}</span>
                                     <span className="truncate text-xs text-muted-foreground">
                                         {data?.email ?? ""}
@@ -68,7 +77,7 @@ export function AppSidebar({ data }: UserProps) {
                             </DropdownMenuTrigger>
 
                             <DropdownMenuContent
-                                className="font-heading min-w-56"
+                                className="min-w-56"
                                 side={isMobile ? "bottom" : "right"}
                                 align="end"
                                 sideOffset={8}

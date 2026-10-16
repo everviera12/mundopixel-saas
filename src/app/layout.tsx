@@ -3,9 +3,9 @@ import { Geist, Geist_Mono, Space_Grotesk, Montserrat } from "next/font/google";
 import "./globals.css";
 import { cn } from "@/lib/utils";
 
-const montserratHeading = Montserrat({ subsets: ['latin'], variable: '--font-heading' });
+const montserratHeading = Montserrat({ subsets: ['latin'], variable: '--font-sans' });
 
-const spaceGrotesk = Space_Grotesk({ subsets: ['latin'], variable: '--font-sans' });
+const spaceGrotesk = Space_Grotesk({ subsets: ['latin'], variable: '--font-heading' });
 
 const geistSans = Geist({
     variable: "--font-geist-sans",

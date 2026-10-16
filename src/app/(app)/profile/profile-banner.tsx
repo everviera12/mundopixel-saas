@@ -37,12 +37,12 @@ export function ProfileBanner({ initials, firstName, lastName, displayName, emai
     return (
         <Card className="border border-border bg-muted/50 ring-0">
             <CardContent className="flex items-center gap-4">
-                <div className="flex size-16 shrink-0 items-center justify-center rounded-full bg-muted font-heading text-xl font-medium text-muted-foreground">
+                <div className="flex size-16 shrink-0 items-center justify-center rounded-full bg-muted text-xl font-medium text-muted-foreground">
                     {initials}
                 </div>
 
                 <div className="grid gap-1">
-                    <span className="font-heading text-base font-medium">{displayName}</span>
+                    <span className="text-base font-medium">{displayName}</span>
                     <span className="flex items-center gap-1.5 text-sm text-muted-foreground">
                         {email}
                         {emailVerified ? (
