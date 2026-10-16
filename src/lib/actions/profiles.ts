@@ -68,11 +68,7 @@ export async function insertUserInfo(_prevState: AuthStateProps, formData: FormD
     };
 }
 
-export async function getProfile(): Promise<{
-    user: User | null;
-    profile: Profile | null;
-    emailVerified: boolean;
-}> {
+export async function getProfile(): Promise<{ user: User | null; profile: Profile | null; emailVerified: boolean; }> {
     const supabase = await createServer();
 
     const { data: { user } } = await supabase.auth.getUser();
