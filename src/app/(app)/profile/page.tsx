@@ -1,6 +1,7 @@
 import { getOrganization } from "@/lib/actions/organizations";
 import { getProfile } from "@/lib/actions/profiles";
 import { OrganizationBanner } from "./organization-banner";
+import { OrganizationForm } from "./organization-form";
 import { ProfileBanner } from "./profile-banner";
 
 export default async function ProfilePage() {
@@ -15,9 +16,6 @@ export default async function ProfilePage() {
     const lastName = profile?.last_name ?? user.user_metadata?.last_name ?? "";
     const displayName = [firstName, lastName].filter(Boolean).join(" ") || "Usuario";
     const initials = `${firstName.charAt(0)}${lastName.charAt(0)}`.toUpperCase() || "U";
-
-    console.log(organization);
-    
 
     return (
         <div className="grid gap-6">
@@ -35,7 +33,9 @@ export default async function ProfilePage() {
                     name={organization.name}
                     slug={organization.slug}
                 />
-            ) : null}
+            ) : (
+                <OrganizationForm />
+            )}
         </div>
     );
 }
