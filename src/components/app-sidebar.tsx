@@ -24,21 +24,32 @@ import {
     DropdownMenuTrigger,
 } from "./ui/dropdown-menu";
 import Link from "next/link";
+import { Organization } from "@/lib/actions/organizations";
 
 type UserProps = {
     data: User | null | undefined;
+    organization: Organization | null | undefined;
 };
 
-export function AppSidebar({ data }: UserProps) {
+export function AppSidebar({ data, organization }: UserProps) {
     const { isMobile } = useSidebar();
 
     const user = data?.user_metadata;
     const displayName = user?.first_name ?? "Usuario";
     const initial = displayName.charAt(0).toUpperCase();
 
+    console.log(organization?.name);
+
+
     return (
         <Sidebar>
-            <SidebarHeader className="shrink-0 border-b border-sidebar-border px-4 py-4" />
+            <SidebarHeader className="shrink-0 border-b border-sidebar-border px-4 py-4">
+                <div className="flex min-w-0 items-center gap-3">
+                    <span className="truncate text-sm font-bold">
+                        {organization?.name ?? "Mi organización"}
+                    </span>
+                </div>
+            </SidebarHeader>
 
             <SidebarContent>
                 <SidebarGroup>
@@ -85,7 +96,7 @@ export function AppSidebar({ data }: UserProps) {
                                 <DropdownMenuGroup>
                                     <DropdownMenuLabel className="p-0">
                                         <div className="flex items-center gap-2.5 px-3 py-2 text-left text-sm">
-                                            <div className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-muted text-sm font-medium text-muted-foreground">
+                                            <div className="flex size-8 shrink-0 items-center justify-center rounded-full bg-muted text-sm font-medium text-muted-foreground">
                                                 {initial}
                                             </div>
                                             <div className="grid min-w-0 flex-1 leading-tight">
@@ -112,7 +123,7 @@ export function AppSidebar({ data }: UserProps) {
                                             <Link href="/profile" className="w-full" />
                                         }
                                     >
-                                        Account
+                                        Mi cuenta
                                     </DropdownMenuItem>
                                     {/* <DropdownMenuItem>Billing</DropdownMenuItem>
                                     <DropdownMenuItem>Notifications</DropdownMenuItem> */}
@@ -126,7 +137,7 @@ export function AppSidebar({ data }: UserProps) {
                                         nativeButton
                                         render={<button type="submit" className="w-full" />}
                                     >
-                                        Log out
+                                        Cerrar sesión
                                     </DropdownMenuItem>
                                 </form>
                             </DropdownMenuContent>

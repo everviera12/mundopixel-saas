@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { requireUser } from "../auth";
 import { createSlug } from "../slug";
 
-type Organization = {
+export type Organization = {
     id: string;
     name: string;
     slug: string;
