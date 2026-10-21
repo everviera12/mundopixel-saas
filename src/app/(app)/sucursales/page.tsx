@@ -1,11 +1,3 @@
-import { Button } from "@/components/ui/button";
-import {
-    DropdownMenu,
-    DropdownMenuContent,
-    DropdownMenuItem,
-    DropdownMenuSeparator,
-    DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 import {
     Table,
     TableBody,
@@ -14,9 +6,9 @@ import {
     TableHeader,
     TableRow,
 } from "@/components/ui/table";
-import { HugeiconsIcon } from "@hugeicons/react";
-import { EllipsisVerticalIcon } from "@hugeicons/core-free-icons";
-import { getOrganizationBranches } from "@/lib/actions/organizations";
+import { getOrganization, getOrganizationBranches } from "@/lib/actions/organizations";
+import { BranchForm } from "./branch-form";
+import { BranchRowMenu } from "./branch-row-menu";
 
 export default async function TenantsPage() {
     const response = await getOrganizationBranches();
@@ -31,16 +23,22 @@ export default async function TenantsPage() {
     }
 
     const branches = response.data ?? [];
+    const organizationResponse = await getOrganization();
+    const organizationName = organizationResponse.data?.name ?? "tu organización";
 
     return (
         <div className="space-y-6">
-            <div>
-                <h1 className="text-2xl font-semibold tracking-tight">
-                    Nuestras sucursales
-                </h1>
-                <p className="text-sm text-muted-foreground">
-                    Administra las sucursales de tu organización.
-                </p>
+            <div className="flex flex-wrap items-start justify-between gap-4">
+                <div>
+                    <h1 className="text-2xl font-semibold tracking-tight">
+                        Nuestras sucursales
+                    </h1>
+                    <p className="text-sm text-muted-foreground">
+                        Administra las sucursales de tu organización.
+                    </p>
+                </div>
+
+                <BranchForm organizationName={organizationName} />
             </div>
 
             <Table>
@@ -61,27 +59,10 @@ export default async function TenantsPage() {
                                 <TableCell>{branch.status ? "Activa" : "Inactiva"}</TableCell>
                                 <TableCell>{new Date(branch.created_at).toLocaleDateString("es-MX")}</TableCell>
                                 <TableCell className="text-right">
-                                    <DropdownMenu>
-                                        <DropdownMenuTrigger
-                                            render={
-                                                <Button variant="ghost" size="icon" className="size-8">
-                                                    <HugeiconsIcon icon={EllipsisVerticalIcon} />
-                                                </Button>
-                                            }
-                                        />
-
-                                        <DropdownMenuContent align="end">
-                                            <DropdownMenuItem>
-                                                Editar
-                                            </DropdownMenuItem>
-
-                                            <DropdownMenuSeparator />
-
-                                            <DropdownMenuItem variant="destructive">
-                                                Eliminar
-                                            </DropdownMenuItem>
-                                        </DropdownMenuContent>
-                                    </DropdownMenu>
+                                    <BranchRowMenu
+                                        branchId={branch.id}
+                                        branchName={branch.name ?? "esta sucursal"}
+                                    />
                                 </TableCell>
                             </TableRow>
                         ))
