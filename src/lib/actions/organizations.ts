@@ -1,8 +1,8 @@
 'use server'
 
 import { revalidatePath } from "next/cache";
+import { requireUser } from "../auth";
 import { createSlug } from "../slug";
-import { createServer } from "../supabase/server";
 
 type Organization = {
     id: string;
@@ -38,17 +38,17 @@ type OrganizationFormState = {
 };
 
 export async function getOrganization(): Promise<OrganizationProps> {
-    const supabase = await createServer();
+    const session = await requireUser();
 
-    const { data: { user }, error: authError } = await supabase.auth.getUser();
-
-    if (authError || !user) {
+    if (!session) {
         return {
-            error: authError?.message ?? "No se encontró un usuario autenticado.",
+            error: "No se encontró un usuario autenticado.",
             success: null,
             data: null,
         };
     }
+
+    const { supabase, user } = session;
 
     const { data: organization, error } = await supabase
         .from("organizations")
@@ -75,16 +75,16 @@ export async function insertOrganization(_prevState: OrganizationFormState, form
     const name = String(formData.get("name") ?? "").trim();
     const slug = createSlug(name);
 
-    const supabase = await createServer()
+    const session = await requireUser();
 
-    const { data: { user }, error: authError } = await supabase.auth.getUser();
-
-    if (authError || !user) {
+    if (!session) {
         return {
             error: "Debes iniciar sesión antes de crear tu organización.",
             success: null,
         };
     }
+
+    const { supabase, user } = session;
 
     const { data: existing } = await supabase
         .from("organizations")
@@ -119,17 +119,17 @@ export async function insertOrganization(_prevState: OrganizationFormState, form
 }
 
 export async function getOrganizationBranches(): Promise<OrganizationBranchesProps> {
-    const supabase = await createServer();
+    const session = await requireUser();
 
-    const { data: { user }, error: authError } = await supabase.auth.getUser();
-
-    if (authError || !user) {
+    if (!session) {
         return {
-            error: authError?.message ?? "No se encontró un usuario autenticado.",
+            error: "No se encontró un usuario autenticado.",
             success: null,
             data: null,
         };
     }
+
+    const { supabase, user } = session;
 
     const { data: organization, error: organizationError } = await supabase
         .from("organizations")
@@ -184,16 +184,16 @@ export async function insertOrganizationBranch(_prevState: OrganizationFormState
         };
     }
 
-    const supabase = await createServer();
+    const session = await requireUser();
 
-    const { data: { user }, error: authError } = await supabase.auth.getUser();
-
-    if (authError || !user) {
+    if (!session) {
         return {
             error: "Debes iniciar sesión antes de crear una sucursal.",
             success: null,
         };
     }
+
+    const { supabase, user } = session;
 
     const { data: organization, error: organizationError } = await supabase
         .from("organizations")
@@ -268,16 +268,16 @@ export async function deleteOrganizationBranch(_prevState: OrganizationFormState
         };
     }
 
-    const supabase = await createServer();
+    const session = await requireUser();
 
-    const { data: { user }, error: authError } = await supabase.auth.getUser();
-
-    if (authError || !user) {
+    if (!session) {
         return {
             error: "Debes iniciar sesión antes de eliminar una sucursal.",
             success: null,
         };
     }
+
+    const { supabase, user } = session;
 
     const { data: organization, error: organizationError } = await supabase
         .from("organizations")
@@ -346,16 +346,16 @@ export async function updateOrganizationBranch(_prevState: OrganizationFormState
         };
     }
 
-    const supabase = await createServer();
+    const session = await requireUser();
 
-    const { data: { user }, error: authError } = await supabase.auth.getUser();
-
-    if (authError || !user) {
+    if (!session) {
         return {
             error: "Debes iniciar sesión antes de actualizar una sucursal.",
             success: null,
         };
     }
+
+    const { supabase, user } = session;
 
     const { data: organization, error: organizationError } = await supabase
         .from("organizations")

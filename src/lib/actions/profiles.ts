@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { User } from "@supabase/supabase-js";
-import { createServer } from "../supabase/server";
+import { requireUser } from "../auth";
 
 type Profile = {
     id: string;
@@ -25,17 +25,17 @@ export async function insertUserInfo(_prevState: AuthStateProps, formData: FormD
     const first_name = String(formData.get("first_name") ?? "");
     const last_name = String(formData.get("last_name") ?? "");
 
-    const supabase = await createServer()
+    const session = await requireUser();
 
-    const { data: { user }, error: authError } = await supabase.auth.getUser();
-
-    if (authError || !user) {
+    if (!session) {
         return {
             error: "Debes iniciar sesión antes de guardar tu perfil.",
             success: null,
             data: null,
         };
     }
+
+    const { supabase, user } = session;
 
     const { data: profile, error } = await supabase
         .from("profiles")
@@ -69,13 +69,13 @@ export async function insertUserInfo(_prevState: AuthStateProps, formData: FormD
 }
 
 export async function getProfile(): Promise<{ user: User | null; profile: Profile | null; emailVerified: boolean; }> {
-    const supabase = await createServer();
+    const session = await requireUser();
 
-    const { data: { user } } = await supabase.auth.getUser();
-
-    if (!user) {
+    if (!session) {
         return { user: null, profile: null, emailVerified: false };
     }
+
+    const { supabase, user } = session;
 
     const { data: profile } = await supabase
         .from("profiles")
