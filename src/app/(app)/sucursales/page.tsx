@@ -61,7 +61,7 @@ export default async function TenantsPage() {
                                 <TableCell className="text-right">
                                     <BranchRowMenu
                                         branchId={branch.id}
-                                        branchName={branch.name ?? "esta sucursal"}
+                                        branchName={branch.name ?? ""}
                                     />
                                 </TableCell>
                             </TableRow>
