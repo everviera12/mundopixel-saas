@@ -173,3 +173,260 @@ export async function getOrganizationBranches(): Promise<OrganizationBranchesPro
         data: branches,
     };
 }
+
+export async function insertOrganizationBranch(_prevState: OrganizationFormState, formData: FormData): Promise<OrganizationFormState> {
+    const name = String(formData.get("name") ?? "").trim();
+
+    if (!name) {
+        return {
+            error: "El nombre de la sucursal es obligatorio.",
+            success: null,
+        };
+    }
+
+    const supabase = await createServer();
+
+    const { data: { user }, error: authError } = await supabase.auth.getUser();
+
+    if (authError || !user) {
+        return {
+            error: "Debes iniciar sesión antes de crear una sucursal.",
+            success: null,
+        };
+    }
+
+    const { data: organization, error: organizationError } = await supabase
+        .from("organizations")
+        .select("id")
+        .eq("owner_user_id", user.id)
+        .maybeSingle();
+
+    if (organizationError) {
+        return {
+            error: organizationError.message,
+            success: null,
+        };
+    }
+
+    if (!organization) {
+        return {
+            error: "No tienes una organización registrada.",
+            success: null,
+        };
+    }
+
+    const slug = createSlug(name);
+
+    const { data: duplicate, error: duplicateError } = await supabase
+        .from("organizations_branches")
+        .select("id")
+        .eq("organization_id", organization.id)
+        .eq("slug", slug)
+        .limit(1)
+        .maybeSingle();
+
+    if (duplicateError) {
+        return {
+            error: duplicateError.message,
+            success: null,
+        };
+    }
+
+    if (duplicate) {
+        return {
+            error: `Ya existe una sucursal con el nombre "${name}" en tu organización.`,
+            success: null,
+        };
+    }
+
+    const { error } = await supabase
+        .from("organizations_branches")
+        .insert({ organization_id: organization.id, name, slug });
+
+    if (error) {
+        return {
+            error: error.message,
+            success: null,
+        };
+    }
+
+    revalidatePath("/sucursales");
+
+    return {
+        error: null,
+        success: "Sucursal creada correctamente.",
+    };
+}
+
+export async function deleteOrganizationBranch(_prevState: OrganizationFormState, formData: FormData): Promise<OrganizationFormState> {
+    const branchId = String(formData.get("branchId") ?? "").trim();
+
+    if (!branchId) {
+        return {
+            error: "No se encontró la sucursal que quieres eliminar.",
+            success: null,
+        };
+    }
+
+    const supabase = await createServer();
+
+    const { data: { user }, error: authError } = await supabase.auth.getUser();
+
+    if (authError || !user) {
+        return {
+            error: "Debes iniciar sesión antes de eliminar una sucursal.",
+            success: null,
+        };
+    }
+
+    const { data: organization, error: organizationError } = await supabase
+        .from("organizations")
+        .select("id")
+        .eq("owner_user_id", user.id)
+        .maybeSingle();
+
+    if (organizationError) {
+        return {
+            error: organizationError.message,
+            success: null,
+        };
+    }
+
+    if (!organization) {
+        return {
+            error: "No tienes una organización registrada.",
+            success: null,
+        };
+    }
+
+    const { data: deleted, error } = await supabase
+        .from("organizations_branches")
+        .delete()
+        .eq("id", branchId)
+        .eq("organization_id", organization.id)
+        .select("id");
+
+    if (error) {
+        return {
+            error: error.message,
+            success: null,
+        };
+    }
+
+    if (!deleted || deleted.length === 0) {
+        return {
+            error: "La sucursal no existe o ya fue eliminada.",
+            success: null,
+        };
+    }
+
+    revalidatePath("/sucursales");
+
+    return {
+        error: null,
+        success: "Sucursal eliminada correctamente.",
+    };
+}
+
+export async function updateOrganizationBranch(_prevState: OrganizationFormState, formData: FormData): Promise<OrganizationFormState> {
+    const branchId = String(formData.get("branchId") ?? "").trim();
+    const name = String(formData.get("name") ?? "").trim();
+
+    if (!branchId) {
+        return {
+            error: "No se encontró la sucursal que quieres actualizar.",
+            success: null,
+        };
+    }
+
+    if (!name) {
+        return {
+            error: "El nombre de la sucursal es obligatorio.",
+            success: null,
+        };
+    }
+
+    const supabase = await createServer();
+
+    const { data: { user }, error: authError } = await supabase.auth.getUser();
+
+    if (authError || !user) {
+        return {
+            error: "Debes iniciar sesión antes de actualizar una sucursal.",
+            success: null,
+        };
+    }
+
+    const { data: organization, error: organizationError } = await supabase
+        .from("organizations")
+        .select("id")
+        .eq("owner_user_id", user.id)
+        .maybeSingle();
+
+    if (organizationError) {
+        return {
+            error: organizationError.message,
+            success: null,
+        };
+    }
+
+    if (!organization) {
+        return {
+            error: "No tienes una organización registrada.",
+            success: null,
+        };
+    }
+
+    const slug = createSlug(name);
+
+    const { data: duplicate, error: duplicateError } = await supabase
+        .from("organizations_branches")
+        .select("id")
+        .eq("organization_id", organization.id)
+        .eq("slug", slug)
+        .neq("id", branchId)
+        .limit(1)
+        .maybeSingle();
+
+    if (duplicateError) {
+        return {
+            error: duplicateError.message,
+            success: null,
+        };
+    }
+
+    if (duplicate) {
+        return {
+            error: `Ya existe una sucursal con el nombre "${name}" en tu organización.`,
+            success: null,
+        };
+    }
+
+    const { data: updated, error } = await supabase
+        .from("organizations_branches")
+        .update({ name, slug, updated_at: new Date().toISOString() })
+        .eq("id", branchId)
+        .eq("organization_id", organization.id)
+        .select("id");
+
+    if (error) {
+        return {
+            error: error.message,
+            success: null,
+        };
+    }
+
+    if (!updated || updated.length === 0) {
+        return {
+            error: "La sucursal no existe o ya fue eliminada.",
+            success: null,
+        };
+    }
+
+    revalidatePath("/sucursales");
+
+    return {
+        error: null,
+        success: "Sucursal actualizada correctamente.",
+    };
+}
