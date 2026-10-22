@@ -36,9 +36,11 @@ export async function updateSession(request: NextRequest) {
   const pathname = request.nextUrl.pathname;
 
   const isAuthRoute = pathname === "/auth" || pathname.startsWith("/auth/");
+  const isInviteRoute = pathname === "/invite" || pathname.startsWith("/invite/");
+  const isConfirmedRoute = pathname === "/confirmed";
   const isLoginOrSignUp = pathname === "/auth/login" || pathname === "/auth/sign-up";
 
-  if (!user && !isAuthRoute) {
+  if (!user && !isAuthRoute && !isInviteRoute && !isConfirmedRoute) {
     const url = request.nextUrl.clone();
     url.pathname = "/auth/login";
     return NextResponse.redirect(url);
