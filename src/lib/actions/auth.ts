@@ -2,7 +2,10 @@
 
 import type { User } from "@supabase/supabase-js";
 
+import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
+import { acceptInvitationCore, getInvitationToken } from "../invitations";
+import { getSafeInternalPath } from "../redirects";
 import { createServer } from "../supabase/server";
 
 type AuthStateProps = {
@@ -17,6 +20,7 @@ type UserProps = AuthStateProps & {
 export async function signInWithEmail(_prevState: AuthStateProps, formData: FormData,): Promise<AuthStateProps> {
     const email = String(formData.get("email") ?? "");
     const password = String(formData.get("password") ?? "");
+    const next = getSafeInternalPath(String(formData.get("next") ?? ""), "/");
 
     if (!email || !password) {
         return {
@@ -26,7 +30,7 @@ export async function signInWithEmail(_prevState: AuthStateProps, formData: Form
 
     const supabase = await createServer()
 
-    const { error } = await supabase.auth.signInWithPassword({
+    const { data, error } = await supabase.auth.signInWithPassword({
         email,
         password,
     });
@@ -43,7 +47,25 @@ export async function signInWithEmail(_prevState: AuthStateProps, formData: Form
     //     success: "Logged in successfully!",
     // };
 
-    redirect('/')
+    // Si la persona llegó desde una invitación, el alta del miembro se hace
+    // aquí (sin paso manual). Si algo falla (otra cuenta, invitación usada o
+    // expirada), vuelve a la invitación, donde se explica el estado.
+    const invitationToken = getInvitationToken(next);
+
+    if (invitationToken && data.user) {
+        const { error: acceptError } = await acceptInvitationCore(
+            supabase,
+            data.user,
+            invitationToken,
+        );
+
+        if (!acceptError) {
+            revalidatePath("/miembros");
+            redirect("/sucursales");
+        }
+    }
+
+    redirect(next)
 }
 
 export async function signUpNewUser(_prevState: AuthStateProps, formData: FormData,): Promise<AuthStateProps> {
@@ -53,6 +75,7 @@ export async function signUpNewUser(_prevState: AuthStateProps, formData: FormDa
     const email = String(formData.get("email") ?? "");
     const password = String(formData.get("password") ?? "");
     const confirmPassword = formData.get("confirm_password");
+    const next = getSafeInternalPath(String(formData.get("next") ?? ""), "");
 
     if (password !== confirmPassword) {
         return {
@@ -74,7 +97,12 @@ export async function signUpNewUser(_prevState: AuthStateProps, formData: FormDa
 
     const supabase = await createServer()
 
-    const { error } = await supabase.auth.signUp({
+    // El correo de confirmación debe volver a `/confirmed` y, si venimos de una
+    // invitación, traer el enlace en `next` para retomar la aceptación.
+    const siteUrl = (process.env.NEXT_PUBLIC_SITE_URL ?? "").replace(/\/+$/, "");
+    const confirmedPath = next ? `/confirmed?next=${encodeURIComponent(next)}` : "/confirmed";
+
+    const { data, error } = await supabase.auth.signUp({
         email,
         password,
         options: {
@@ -82,7 +110,7 @@ export async function signUpNewUser(_prevState: AuthStateProps, formData: FormDa
                 first_name: first_name,
                 last_name: last_name,
             },
-            emailRedirectTo: '/confirmed' // -> Cambiar a URL valida con SSL
+            emailRedirectTo: `${siteUrl}${confirmedPath}`,
         }
     });
 
@@ -91,6 +119,29 @@ export async function signUpNewUser(_prevState: AuthStateProps, formData: FormDa
             error: error.message,
             success: null
         };
+    }
+
+    // Si la confirmación de correo está desactivada ya hay sesión: se acepta la
+    // invitación en el acto (mismo camino que `/confirmed`).
+    if (data.session && data.user) {
+        const invitationToken = getInvitationToken(next);
+
+        if (invitationToken) {
+            const { error: acceptError } = await acceptInvitationCore(
+                supabase,
+                data.user,
+                invitationToken,
+            );
+
+            if (!acceptError) {
+                revalidatePath("/miembros");
+                redirect("/sucursales");
+            }
+        }
+
+        if (next) {
+            redirect(next);
+        }
     }
 
     return {
