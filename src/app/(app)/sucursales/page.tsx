@@ -1,3 +1,8 @@
+import Link from "next/link";
+
+import { HugeiconsIcon } from "@hugeicons/react";
+import { ArrowRight01Icon } from "@hugeicons/core-free-icons";
+
 import {
     Table,
     TableBody,
@@ -6,31 +11,18 @@ import {
     TableHeader,
     TableRow,
 } from "@/components/ui/table";
-import { getMyMembership } from "@/lib/actions/members";
+import { getMyMemberships } from "@/lib/actions/members";
 import { getOrganization, getOrganizationBranches } from "@/lib/actions/organizations";
+import { getRoleLabel } from "@/lib/role-labels";
 import { BranchForm } from "./branch-form";
 import { BranchRowMenu } from "./branch-row-menu";
 import { MembershipBanner } from "./membership-banner";
 
-const ROLE_LABELS: Record<string, string> = {
-    owner: "Propietario",
-    admin: "Administrador",
-    manager: "Gerente",
-    salesperson: "Vendedor",
-};
-
-function getRoleLabel(roleName: string | null) {
-    if (!roleName) {
-        return "Sin rol";
-    }
-
-    return ROLE_LABELS[roleName] ?? roleName;
-}
-
 export default async function TenantsPage() {
     const organizationResponse = await getOrganization();
     const organization = organizationResponse.data;
-    const membership = organization ? null : await getMyMembership();
+    const memberships = await getMyMemberships();
+    const membership = organization ? null : memberships[0] ?? null;
 
     if (!organization && membership?.organizationName) {
         return (
@@ -40,6 +32,13 @@ export default async function TenantsPage() {
                     organizationName={membership.organizationName}
                     roleLabel={getRoleLabel(membership.roleName)}
                 />
+                <Link
+                    href="/sucursales/organizaciones"
+                    className="inline-flex items-center gap-2 text-sm font-medium text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
+                >
+                    Mis organizaciones
+                    <HugeiconsIcon icon={ArrowRight01Icon} strokeWidth={2} className="size-4" />
+                </Link>
             </div>
         );
     }
@@ -68,6 +67,15 @@ export default async function TenantsPage() {
                     <p className="text-sm text-muted-foreground">
                         Administra las sucursales de tu organización.
                     </p>
+                    {memberships.length > 0 ? (
+                        <Link
+                            href="/sucursales/organizaciones"
+                            className="mt-2 inline-flex items-center gap-2 text-sm font-medium text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
+                        >
+                            Mis organizaciones
+                            <HugeiconsIcon icon={ArrowRight01Icon} strokeWidth={2} className="size-4" />
+                        </Link>
+                    ) : null}
                 </div>
 
                 <BranchForm organizationName={organizationName} />
