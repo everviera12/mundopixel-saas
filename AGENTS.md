@@ -262,16 +262,17 @@ organizations_branches 1—N invitation_branches
 
 ### 13.4 Tablas y columnas
 
-#### `profiles` (⚠️ DDL por confirmar; columnas inferidas del código)
+#### `profiles`
 
 | Columna | Tipo | Default | Null |
 |---|---|---|---|
 | `id` | uuid | — | no (PK; igual a `auth.users.id`) |
-| `first_name` | text | — | sí |
-| `last_name` | text | — | sí |
+| `first_name` | text | — | no |
+| `last_name` | text | — | no |
 | `created_at` | timestamptz | now() | no |
+| `updated_at` | timestamptz | — | sí |
 
-RLS: INSERT propio (`auth.uid() = id`), UPDATE propio (policy `profiles update own`, agregada el 22-10-2026), SELECT propio, SELECT de members que comparten org. **Sin policy de DELETE.** Además, el trigger `on_auth_user_created` (`after insert on auth.users` → `handle_new_user()`, `SECURITY DEFINER`) crea la fila con `first_name`/`last_name` de `raw_user_meta_data`.
+RLS: INSERT propio (`auth.uid() = id`), UPDATE propio (policy `profiles update own`, agregada el 22-10-2026), SELECT propio, SELECT de members que comparten org. **Sin policy de DELETE.** Además, el trigger `on_auth_user_created` (`after insert on auth.users` → `handle_new_user()`, `SECURITY DEFINER`) crea la fila con `first_name`/`last_name` de `raw_user_meta_data`. `updated_at` existe pero ningún trigger la mantiene y la app no la usa.
 
 #### `organizations`
 
@@ -282,7 +283,7 @@ RLS: INSERT propio (`auth.uid() = id`), UPDATE propio (policy `profiles update o
 | `slug` | text | — | no | |
 | `status` | boolean | true | no | no la usan las policies |
 | `created_at` | timestamptz | now() | no | |
-| `updated_at` | timestamptz | — | sí | no hay trigger que la actualice |
+| `updated_at` | timestamptz | — | sí | trigger `set_updated_at` (22-10-2026) |
 | `owner_user_id` | uuid | ⚠️ gen_random_uuid() | no | UNIQUE; FK → `profiles(id)` CASCADE |
 
 RLS: INSERT propio (`owner_user_id = auth.uid()`), SELECT del owner o de un member de la org (policy `organizations select for members` con `is_org_member(id)`). **Sin UPDATE ni DELETE.**
@@ -306,11 +307,11 @@ Unique: `(organization_id, user_id)`. RLS: SELECT para members de la org; INSERT
 |---|---|---|---|---|
 | `id` | uuid | gen_random_uuid() | no | PK |
 | `organization_id` | uuid | — | no | FK → `organizations(id)` CASCADE |
-| `name` | text | — | ⚠️ sí | |
-| `slug` | text | — | ⚠️ sí | sin unique `(organization_id, slug)` |
+| `name` | text | — | no | |
+| `slug` | text | — | no | UNIQUE `(organization_id, slug)` (`organizations_branches_organization_slug_key`) |
 | `status` | boolean | true | sí | no la usan las policies |
 | `created_at` | timestamptz | now() | no | |
-| `updated_at` | timestamptz | — | sí | no hay trigger |
+| `updated_at` | timestamptz | — | sí | trigger `set_updated_at` (22-10-2026) |
 
 RLS: SELECT owner/admin; INSERT/UPDATE/DELETE **solo owner** (`owner_user_id`).
 
@@ -325,21 +326,21 @@ RLS: SELECT owner/admin; INSERT/UPDATE/DELETE **solo owner** (`owner_user_id`).
 
 Unique: `(organization_member_id, branch_id)`. RLS: SELECT para members de la org; INSERT/DELETE owner/admin.
 
-#### `organization_invitations` (⚠️ DDL por confirmar; columnas inferidas del código)
+#### `organization_invitations`
 
 | Columna | Tipo | Null | Notas |
 |---|---|---|---|
-| `id` | uuid | no (PK) | |
-| `organization_id` | uuid | no | FK → `organizations(id)` |
+| `id` | uuid | no (PK) | default `gen_random_uuid()` |
+| `organization_id` | uuid | no | FK → `organizations(id)` CASCADE |
 | `email` | text | no | |
-| `role_id` | uuid | no | FK → `roles(id)` |
-| `invited_by` | uuid | ? | referencia un `organization_members.id` (el owner la bootstrapea) |
-| `token_hash` | text | no | SHA-256 hex del token base64url de 32 bytes |
-| `status` | boolean | no | TRUE = pendiente |
-| `expires_at` | timestamptz | no | 7 días (constante `INVITATION_EXPIRATION_DAYS`) |
-| `created_at` | timestamptz | no | |
+| `role_id` | uuid | sí | FK → `roles(id)` |
+| `invited_by` | uuid | sí | referencia un `organization_members.id` (el owner la bootstrapea) |
+| `token_hash` | text | sí | SHA-256 hex del token base64url de 32 bytes |
+| `status` | boolean | no | TRUE = pendiente (default `true`) |
+| `expires_at` | timestamptz | sí | 7 días (constante `INVITATION_EXPIRATION_DAYS`) |
+| `created_at` | timestamptz | no | default `now()` |
 
-RLS: SELECT/INSERT/DELETE/UPDATE para owner/admin. La policy de UPDATE (agregada a mano el 21-10-2026) usa `is_org_owner_or_admin` en USING y WITH CHECK, y **permite cambiar cualquier columna** (ver gotcha en §13.8). Desde el 22-10-2026 existe además el helper `is_org_manager(p_organization_id)` y tres policies para managers: **SELECT**, **INSERT** (con guard: el `role_id` invitado debe ser `manager` o `salesperson`, nunca `owner`/`admin`) y **DELETE**. A propósito **no** hay policy de UPDATE para manager: regenerar toca `role_id`/`organization_id`/`token_hash` y permitiría escalar privilegios; "Generar nuevo enlace" queda solo para owner/admin.
+RLS: SELECT/INSERT/DELETE/UPDATE para owner/admin. La policy de UPDATE (agregada a mano el 21-10-2026) usa `is_org_owner_or_admin` en USING y WITH CHECK, y **permite cambiar cualquier columna**, salvo `organization_id`, que el trigger `block_invitation_move` bloquea desde el 22-10-2026 (ver gotcha en §13.8). Desde el 22-10-2026 existe además el helper `is_org_manager(p_organization_id)` y tres policies para managers: **SELECT**, **INSERT** (con guard: el `role_id` invitado debe ser `manager` o `salesperson`, nunca `owner`/`admin`) y **DELETE**. A propósito **no** hay policy de UPDATE para manager: regenerar toca `token_hash`/`expires_at` y permitiría escalar privilegios; "Generar nuevo enlace" queda solo para owner/admin.
 
 #### `invitation_branches`
 
@@ -355,7 +356,7 @@ RLS: activo con policies `select`/`insert`/`delete` para owner/admin de la organ
 | Columna | Tipo | Null | Notas |
 |---|---|---|---|
 | `id` | uuid | no (PK) | default gen_random_uuid() |
-| `name` | varchar | ⚠️ sí | sin UNIQUE |
+| `name` | varchar | no | UNIQUE (`roles_name_key`) |
 | `created_at` | timestamptz | no |
 
 RLS: SELECT libre para authenticated; **sin escritura** (el seed va por SQL/dashboard). El código usa los nombres `owner`, `admin`, `manager`, `salesperson` (labels en `miembros/page.tsx: ROLE_LABELS`).
@@ -385,9 +386,9 @@ RLS: SELECT libre para authenticated; **sin escritura** (el seed va por SQL/dash
 - **`get_pending_invitation_email_states(p_organization_id uuid)`** → tabla `(invitation_id, email, can_register)`.
     - Devuelve una fila por invitación **pendiente** (`status = true`) de la organización. ⚠️ **No filtra expiradas**: quien consuma los datos debe calcularlo con `expires_at` (en la app: `isInvitationExpired`).
     - `can_register` = `TRUE` si **no existe** ninguna fila en `auth.users` con ese email (comparación con `lower()`). Sirve para decidir si el flujo de invitación debe llevar a sign-up o a login. Solo mira `auth.users`, no `profiles`.
-    - `SECURITY DEFINER` con el guard **dentro de la función**: `is_org_owner_or_admin(p_organization_id)` en el WHERE. Como salta RLS, sin ese guard cualquiera podría leer todas las invitaciones. Si el caller no es owner/admin devuelve filas vacías (no lanza error). `search_path = 'auth', 'public'` porque consulta `auth.users` directamente.
+    - `SECURITY DEFINER` con el guard **dentro de la función**: `is_org_owner_or_admin(p_organization_id) or is_org_manager(p_organization_id)` en el WHERE (ampliado el 22-10-2026). Como salta RLS, sin ese guard cualquiera podría leer todas las invitaciones. Si el caller no es owner/admin/manager devuelve filas vacías (no lanza error). `search_path = 'auth', 'public'` porque consulta `auth.users` directamente.
 - Las dos que reciben `p_token_hash` esperan el **hash** SHA-256, no el token en sí (`randomBytes(32).toString("base64url")`): la app lo hashea con `hashInvitationToken` (`src/lib/actions/invitations.ts`) y el token original nunca llega a la DB.
-- **La app sí llama a las RPC de invitaciones** desde `src/lib/actions/invitations.ts` (pantalla `/invite/[token]`, en el grupo `(auth)`): preview con `get_invitation_by_token` y aceptación con `accept_invitation` (el definer hace el trabajo real: member + branches + marcar la invitación como usada). `get_pending_invitation_email_states` la llama `getPendingInvitations` (`src/lib/actions/members.ts`) para la columna “Registrarse”; si la RPC falla, la app muestra “–”.
+- **La app sí llama a las RPC de invitaciones** desde `src/lib/actions/invitations.ts` (pantalla `/invite/[token]`, en el grupo `(auth)`): preview con `get_invitation_by_token` y aceptación con `accept_invitation` (el definer hace el trabajo real: member + branches + marcar la invitación como usada). `get_pending_invitation_email_states` la llama `getPendingInvitations` (`src/lib/actions/members.ts`) para la columna “Registrarse”; si la RPC falla, la app muestra “–”. Desde el 22-10-2026 el guard admite también managers, así que el manager de la org ya ve ✓/✗ en esa columna.
 
 ### 13.7 Quién toca qué desde la app
 
@@ -410,21 +411,21 @@ Bootstrap importante: `getActorMembership()` (en `members.ts`) crea **perezosame
 2. **Resuelto: `profiles` ya tiene policy de UPDATE.** Policy `profiles update own` (`using` y `with check` con `auth.uid() = id`, agregada el 22-10-2026), así que el `upsert` de `insertUserInfo` funciona tanto en INSERT como en UPDATE. Sigue sin policy de DELETE.
 3. **Resuelto: `invitation_branches` ya tiene la PK correcta.** Migrada el 22-10-2026 a `primary key (invitation_id, branch_id)`, `branch_id` NOT NULL y sin default en `invitation_id`; con policies de owner/admin. La app permite preasignar varias sucursales al invitar (`insertInvitation` valida que sean de la org) y `accept_invitation` las copia.
 4. **`status` es decorativo**: ni `is_org_member`, ni `is_org_owner_or_admin`, ni las policies de organizations/branches consultan `status`. Un member desactivado o una sucursal "off" siguen funcionando igual. Definir qué es antes de usarlas.
-5. **`roles` frágil**: `name` nullable y sin unique. `getActorMembership` hace `.eq("name", "owner").maybeSingle()`; un seed duplicado rompe esa consulta. Además, RLS permite a un admin asignar `role_id = owner` por API aunque la app lo evite con `getAssignableRole` (que filtra con `neq("name", "owner")`).
+5. **Resuelto: `roles` endurecido.** `name` es NOT NULL y UNIQUE (`roles_name_key`, 22-10-2026), así que un seed duplicado ya no puede romper el `.eq("name", "owner").maybeSingle()` de `getActorMembership`. Además, el trigger `organization_members_block_owner_role` impide asignar el rol `owner` a quien no sea `organizations.owner_user_id` (el bootstrap del owner en `getActorMembership` sigue permitido). La app mantiene `getAssignableRole` como primera defensa.
 6. **`organizations` sin UPDATE/DELETE**: no se puede renombrar/eliminar la organización desde el cliente.
 7. **Resuelto: SELECT de `organizations` para members.** La policy `organizations select for members` (`is_org_member(id)`) permite que un invitado lea su organización; `getActorMembership` llena `organizationName` y `organizationSlug` vía embed. Sigue **sin UPDATE/DELETE**: el member no puede editar la org.
 8. **Sucursales: admins solo miran.** Crear/editar/eliminar es exclusivo del owner aunque el helper diga "owner_or_admin".
-9. **`organizations_branches` sin unique `(organization_id, slug)`**: el chequeo de duplicados es solo de la app; dos requests concurrentes pueden duplicar. `name`/`slug` nullable agravan.
-10. **La policy de UPDATE de invitations permite cambiar cualquier columna**, incluida `organization_id`: un admin de dos orgs podría mover una invitación de una a otra y `invitation_branches` quedaría apuntando a sucursales de la org vieja (y `accept_invitation` no valida esa coherencia). Si solo se quiere revocar: `grant update (status) ...` o un trigger que impida tocar `organization_id`/`token_hash`. Mitigación parcial (22-10-2026): los managers **no** tienen UPDATE; la app oculta "Generar nuevo enlace" para ellos y `regenerateInvitation` exige owner/admin en la org de la invitación.
+9. **Resuelto: `organizations_branches` tiene unique `(organization_id, slug)`** (`organizations_branches_organization_slug_key`) y `name`/`slug` son NOT NULL desde el 22-10-2026. El chequeo de la app queda como primera defensa; la DB ya no permite duplicados ni nulos por API.
+10. **Mitigado: la policy de UPDATE de invitations permite cambiar cualquier columna.** Desde el 22-10-2026 el trigger `block_invitation_move` prohíbe cambiar `organization_id` (el vector para mover una invitación de org y dejar `invitation_branches` incoherente); `token_hash` y `expires_at` siguen editables porque `regenerateInvitation` los necesita (es lo único que actualiza). Mitigación previa: los managers **no** tienen UPDATE; la app oculta "Generar nuevo enlace" para ellos y `regenerateInvitation` exige owner/admin en la org de la invitación.
 11. **`shares_organization` solo mira `organization_members`**: si un owner se borra de members pierde visibilidad de perfiles de su equipo.
 12. **Cascada destructiva** desde `profiles` (borrar el perfil del owner = borrar toda la organización). Confirmar intención.
-13. **Sin triggers en `public`**: nada mantiene `updated_at` automáticamente; si lo necesitas, actualízalo en la action o agrega el trigger.
+13. **Resuelto en parte: triggers de `updated_at`.** Desde el 22-10-2026 `set_updated_at()` corre en `before update` de `organizations` y `organizations_branches`. `profiles.updated_at` sigue sin trigger.
 
-### 13.9 Pendientes de confirmar con más queries
+### 13.9 Verificaciones ejecutadas (sin pendientes)
 
-- DDL exacto de `profiles` y `organization_invitations` (columnas de arriba son inferidas del código).
-- `relrowsecurity` por tabla: ¿RLS habilitado en todas? `invitation_branches` confirmado: RLS activo + policies de owner/admin (22-10-2026).
-- Guard interno de `get_pending_invitation_email_states`: sigue siendo `is_org_owner_or_admin`. Para que un manager vea la columna "Registrarse" real hay que reemplazar la función añadiendo `or is_org_manager(p_organization_id)` (pendiente: requiere el `pg_get_functiondef` actual). Mientras tanto un manager ve "–".
+- DDL de `profiles` e `organization_invitations` confirmado por query el 22-10-2026; las tablas de §13.4 reflejan el esquema real.
+- RLS activo (`relrowsecurity = true`) en las 8 tablas de `public`, ninguna con `FORCE ROW LEVEL SECURITY` (el `service_role` bypassa por diseño; los usuarios pasan por policies).
+- Guard de `get_pending_invitation_email_states` ampliado a owner/admin **o** manager: el manager ya ve la columna "Registrarse".
 
 ## 14. Estado actual
 
