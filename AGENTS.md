@@ -284,9 +284,9 @@ RLS: INSERT propio (`auth.uid() = id`), UPDATE propio (policy `profiles update o
 | `status` | boolean | true | no | no la usan las policies |
 | `created_at` | timestamptz | now() | no | |
 | `updated_at` | timestamptz | — | sí | trigger `set_updated_at` (22-10-2026) |
-| `owner_user_id` | uuid | ⚠️ gen_random_uuid() | no | UNIQUE; FK → `profiles(id)` CASCADE |
+| `owner_user_id` | uuid | — | no | UNIQUE; FK → `profiles(id)` CASCADE |
 
-RLS: INSERT propio (`owner_user_id = auth.uid()`), SELECT del owner o de un member de la org (policy `organizations select for members` con `is_org_member(id)`). **Sin UPDATE ni DELETE.**
+RLS: INSERT propio (`owner_user_id = auth.uid()`), SELECT del owner o de un member de la org (policy `organizations select for members` con `is_org_member(id)`), UPDATE solo owner (policy `organizations update own`, `owner_user_id = auth.uid()` en USING y WITH CHECK, 22-10-2026) y limitado por column-grant a `name`. **Sin DELETE.**
 
 #### `organization_members`
 
@@ -340,7 +340,7 @@ Unique: `(organization_member_id, branch_id)`. RLS: SELECT para members de la or
 | `expires_at` | timestamptz | sí | 7 días (constante `INVITATION_EXPIRATION_DAYS`) |
 | `created_at` | timestamptz | no | default `now()` |
 
-RLS: SELECT/INSERT/DELETE/UPDATE para owner/admin. La policy de UPDATE (agregada a mano el 21-10-2026) usa `is_org_owner_or_admin` en USING y WITH CHECK, y **permite cambiar cualquier columna**, salvo `organization_id`, que el trigger `block_invitation_move` bloquea desde el 22-10-2026 (ver gotcha en §13.8). Desde el 22-10-2026 existe además el helper `is_org_manager(p_organization_id)` y tres policies para managers: **SELECT**, **INSERT** (con guard: el `role_id` invitado debe ser `manager` o `salesperson`, nunca `owner`/`admin`) y **DELETE**. A propósito **no** hay policy de UPDATE para manager: regenerar toca `token_hash`/`expires_at` y permitiría escalar privilegios; "Generar nuevo enlace" queda solo para owner/admin.
+RLS: SELECT/INSERT/DELETE/UPDATE para owner/admin. La policy de UPDATE (agregada a mano el 21-10-2026) usa `is_org_owner_or_admin` en USING y WITH CHECK; desde el 22-10-2026 el `grant update` de `authenticated` está limitado a `token_hash`/`expires_at` (lo único que actualiza `regenerateInvitation`) y el trigger `block_invitation_move` prohíbe cambiar `organization_id` (ver gotcha en §13.8). Desde el 22-10-2026 existe además el helper `is_org_manager(p_organization_id)` y tres policies para managers: **SELECT**, **INSERT** (con guard: el `role_id` invitado debe ser `manager` o `salesperson`, nunca `owner`/`admin`) y **DELETE**. A propósito **no** hay policy de UPDATE para manager: "Generar nuevo enlace" queda solo para owner/admin.
 
 #### `invitation_branches`
 
@@ -366,11 +366,11 @@ RLS: SELECT libre para authenticated; **sin escritura** (el seed va por SQL/dash
 | Tabla | SELECT | INSERT | UPDATE | DELETE |
 |---|---|---|---|---|
 | `profiles` | propio + coworkers de org compartida | propio | propio | ❌ |
-| `organizations` | owner + members de la org | propio (`owner_user_id = uid`) | ❌ | ❌ |
+| `organizations` | owner + members de la org | propio (`owner_user_id = uid`) | owner (solo `name` vía column-grant) | ❌ |
 | `organization_members` | members de la org | owner/admin | owner/admin | owner/admin |
 | `organizations_branches` | owner/admin | solo owner | solo owner | solo owner |
 | `organizations_branch_members` | members de la org | owner/admin | ❌ | owner/admin |
-| `organization_invitations` | owner/admin + manager (su org) | owner/admin; manager solo con rol invitado manager/salesperson | owner/admin ⚠️ (cualquier columna); manager ❌ | owner/admin + manager (su org) |
+| `organization_invitations` | owner/admin + manager (su org) | owner/admin; manager solo con rol invitado manager/salesperson | owner/admin (solo `token_hash`/`expires_at` vía column-grant); manager ❌ | owner/admin + manager (su org) |
 | `invitation_branches` | owner/admin de la org de la invitación | owner/admin | ❌ | owner/admin |
 | `roles` | todos los authenticated | ❌ | ❌ | ❌ |
 
@@ -412,11 +412,11 @@ Bootstrap importante: `getActorMembership()` (en `members.ts`) crea **perezosame
 3. **Resuelto: `invitation_branches` ya tiene la PK correcta.** Migrada el 22-10-2026 a `primary key (invitation_id, branch_id)`, `branch_id` NOT NULL y sin default en `invitation_id`; con policies de owner/admin. La app permite preasignar varias sucursales al invitar (`insertInvitation` valida que sean de la org) y `accept_invitation` las copia.
 4. **`status` es decorativo**: ni `is_org_member`, ni `is_org_owner_or_admin`, ni las policies de organizations/branches consultan `status`. Un member desactivado o una sucursal "off" siguen funcionando igual. Definir qué es antes de usarlas.
 5. **Resuelto: `roles` endurecido.** `name` es NOT NULL y UNIQUE (`roles_name_key`, 22-10-2026), así que un seed duplicado ya no puede romper el `.eq("name", "owner").maybeSingle()` de `getActorMembership`. Además, el trigger `organization_members_block_owner_role` impide asignar el rol `owner` a quien no sea `organizations.owner_user_id` (el bootstrap del owner en `getActorMembership` sigue permitido). La app mantiene `getAssignableRole` como primera defensa.
-6. **`organizations` sin UPDATE/DELETE**: no se puede renombrar/eliminar la organización desde el cliente.
-7. **Resuelto: SELECT de `organizations` para members.** La policy `organizations select for members` (`is_org_member(id)`) permite que un invitado lea su organización; `getActorMembership` llena `organizationName` y `organizationSlug` vía embed. Sigue **sin UPDATE/DELETE**: el member no puede editar la org.
+6. **Resuelto en parte: `organizations` ya tiene UPDATE para el owner.** Policy `organizations update own` + `grant update (name)` (22-10-2026): el owner puede renombrar la org por API, pero **la app aún no tiene UI** para hacerlo. Sigue **sin DELETE**.
+7. **Resuelto: SELECT de `organizations` para members.** La policy `organizations select for members` (`is_org_member(id)`) permite que un invitado lea su organización; `getActorMembership` llena `organizationName` y `organizationSlug` vía embed. El member no puede editar la org (UPDATE solo para el owner, ver item 6); sigue **sin DELETE**.
 8. **Sucursales: admins solo miran.** Crear/editar/eliminar es exclusivo del owner aunque el helper diga "owner_or_admin".
 9. **Resuelto: `organizations_branches` tiene unique `(organization_id, slug)`** (`organizations_branches_organization_slug_key`) y `name`/`slug` son NOT NULL desde el 22-10-2026. El chequeo de la app queda como primera defensa; la DB ya no permite duplicados ni nulos por API.
-10. **Mitigado: la policy de UPDATE de invitations permite cambiar cualquier columna.** Desde el 22-10-2026 el trigger `block_invitation_move` prohíbe cambiar `organization_id` (el vector para mover una invitación de org y dejar `invitation_branches` incoherente); `token_hash` y `expires_at` siguen editables porque `regenerateInvitation` los necesita (es lo único que actualiza). Mitigación previa: los managers **no** tienen UPDATE; la app oculta "Generar nuevo enlace" para ellos y `regenerateInvitation` exige owner/admin en la org de la invitación.
+10. **Resuelto: UPDATE de invitations restringido.** Desde el 22-10-2026 el `grant update` de `authenticated` está limitado a `token_hash`/`expires_at` (lo único que actualiza `regenerateInvitation`) y el trigger `block_invitation_move` prohíbe cambiar `organization_id`. Los managers **no** tienen UPDATE: la app oculta "Generar nuevo enlace" para ellos y `regenerateInvitation` exige owner/admin en la org de la invitación.
 11. **`shares_organization` solo mira `organization_members`**: si un owner se borra de members pierde visibilidad de perfiles de su equipo.
 12. **Cascada destructiva** desde `profiles` (borrar el perfil del owner = borrar toda la organización). Confirmar intención.
 13. **Resuelto en parte: triggers de `updated_at`.** Desde el 22-10-2026 `set_updated_at()` corre en `before update` de `organizations` y `organizations_branches`. `profiles.updated_at` sigue sin trigger.
@@ -426,6 +426,7 @@ Bootstrap importante: `getActorMembership()` (en `members.ts`) crea **perezosame
 - DDL de `profiles` e `organization_invitations` confirmado por query el 22-10-2026; las tablas de §13.4 reflejan el esquema real.
 - RLS activo (`relrowsecurity = true`) en las 8 tablas de `public`, ninguna con `FORCE ROW LEVEL SECURITY` (el `service_role` bypassa por diseño; los usuarios pasan por policies).
 - Guard de `get_pending_invitation_email_states` ampliado a owner/admin **o** manager: el manager ya ve la columna "Registrarse".
+- Policies de `public` auditadas con `pg_policies` el 22-10-2026: coinciden con §13.5. Se quitó el default `gen_random_uuid()` de `organizations.owner_user_id` y se limitaron por column-grant los UPDATE de `organizations` (`name`) y `organization_invitations` (`token_hash`, `expires_at`).
 
 ## 14. Estado actual
 
