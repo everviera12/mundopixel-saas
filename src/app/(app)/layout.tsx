@@ -3,6 +3,12 @@ import { AppSidebar } from "@/components/app-sidebar";
 import { getUserInfo } from "@/lib/actions/auth";
 import { getOrganization } from "@/lib/actions/organizations";
 
+// La zona autenticada lee la sesión y los datos en tiempo de request
+// (connection() en createServer) y todavía no envuelve esos datos en Suspense.
+// Optamos este segmento fuera de la validación de navegación instantánea:
+// bloquear es el comportamiento esperado por ahora.
+export const instant = false;
+
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
     const response = await getUserInfo();
     const responseOrganization = await getOrganization();
