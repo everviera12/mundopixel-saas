@@ -256,6 +256,47 @@ export async function getMyMembership(): Promise<MyMembership | null> {
     return getActorMembership(session.supabase, session.user.id);
 }
 
+/**
+ * Lista todas las organizaciones a las que pertenece el usuario (la propia y
+ * las de las invitaciones aceptadas). Es de solo lectura; el único efecto es
+ * el bootstrap perezoso de la fila de member del owner.
+ */
+export async function getMyMemberships(): Promise<MyMembership[]> {
+    const session = await requireUser();
+
+    if (!session) {
+        return [];
+    }
+
+    const { supabase, user } = session;
+
+    // Asegura la fila de member del owner para que su organización propia
+    // aparezca en la lista.
+    await getActorMembership(supabase, user.id);
+
+    const { data } = await supabase
+        .from("organization_members")
+        .select("id, organization_id, role_id, roles(name), organizations(name, slug)")
+        .eq("user_id", user.id)
+        .order("created_at", { ascending: true });
+
+    return (data ?? []).map((membership) => {
+        const role = normalizeRelated<{ name: string | null }>(membership.roles);
+        const organization = normalizeRelated<{ name: string | null; slug: string | null }>(
+            membership.organizations,
+        );
+
+        return {
+            organizationId: membership.organization_id as string,
+            organizationName: organization?.name ?? null,
+            organizationSlug: organization?.slug ?? null,
+            memberId: membership.id as string,
+            roleId: membership.role_id as string | null,
+            roleName: role?.name ?? null,
+        };
+    });
+}
+
 export async function getMembers(): Promise<MembersState> {
     const session = await requireUser();
 
