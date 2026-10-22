@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { requireUser } from "../auth";
+import { ensureProfile } from "../profiles";
 import { createSlug } from "../slug";
 
 export type Organization = {
@@ -95,6 +96,18 @@ export async function insertOrganization(_prevState: OrganizationFormState, form
     if (existing) {
         return {
             error: "Ya tienes una organización registrada.",
+            success: null,
+        };
+    }
+
+    // `owner_user_id` es FK a `profiles(id)`: si la cuenta todavía no tiene su
+    // fila de perfil, el insert fallaría. El trigger de `auth.users` la crea al
+    // registrarse; esto cubre cuentas anteriores o entornos sin trigger.
+    const profileError = await ensureProfile(supabase, user);
+
+    if (profileError) {
+        return {
+            error: profileError,
             success: null,
         };
     }
