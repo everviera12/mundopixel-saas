@@ -1,5 +1,6 @@
 import { createServerClient } from '@supabase/ssr'
 import { cookies } from 'next/headers'
+import { connection } from 'next/server'
 
 {/**
     Crea un cliente de Supabase para utilizarlo desde el servidor de Next.js.
@@ -10,6 +11,12 @@ import { cookies } from 'next/headers'
 */}
 
 export async function createServer() {
+    // La sesión de Supabase Auth se valida con Date.now() y además leemos
+    // cookies. Con cacheComponents, el prefetch intentaría prerenderizar esa
+    // lectura y Next marca la hora como valor inestable: esperar una petición
+    // real hace que toda lectura autenticada se resuelva en tiempo de request.
+    await connection();
+
     const cookieStore = await cookies();
 
     return createServerClient(
