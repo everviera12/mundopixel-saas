@@ -62,6 +62,17 @@ export function AppSidebar({ data, organization }: UserProps) {
                         </SidebarMenuItem>
                     </SidebarMenu>
                 </SidebarGroup>
+
+                <SidebarGroup>
+                    <SidebarGroupLabel>Equipo</SidebarGroupLabel>
+                    <SidebarMenu>
+                        <SidebarMenuItem>
+                            <SidebarMenuButton render={<Link href="/miembros" className="w-full" />}>
+                                Miembros
+                            </SidebarMenuButton>
+                        </SidebarMenuItem>
+                    </SidebarMenu>
+                </SidebarGroup>
             </SidebarContent>
 
             <SidebarFooter>
