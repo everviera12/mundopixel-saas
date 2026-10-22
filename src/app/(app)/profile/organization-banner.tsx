@@ -1,13 +1,15 @@
 import { HugeiconsIcon } from "@hugeicons/react";
 import { Building03Icon } from "@hugeicons/core-free-icons";
+import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 
 type OrganizationBannerProps = {
     name: string;
-    slug: string;
+    slug?: string;
+    roleLabel?: string;
 };
 
-export function OrganizationBanner({ name, slug }: OrganizationBannerProps) {
+export function OrganizationBanner({ name, slug, roleLabel }: OrganizationBannerProps) {
     return (
         <Card className="border border-border bg-muted/50 ring-0">
             <CardContent className="flex items-center gap-4">
@@ -16,8 +18,11 @@ export function OrganizationBanner({ name, slug }: OrganizationBannerProps) {
                 </div>
 
                 <div className="grid gap-1">
-                    <span className="text-base font-medium">{name}</span>
-                    <span className="text-sm text-muted-foreground">{slug}</span>
+                    <div className="flex flex-wrap items-center gap-2">
+                        <span className="text-base font-medium">{name}</span>
+                        {roleLabel ? <Badge variant="outline">{roleLabel}</Badge> : null}
+                    </div>
+                    {slug ? <span className="text-sm text-muted-foreground">{slug}</span> : null}
                 </div>
             </CardContent>
         </Card>
