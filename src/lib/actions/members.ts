@@ -79,6 +79,7 @@ type InvitationsState = {
 type InvitationFormState = {
     error: string | null;
     success: string | null;
+    warning?: string | null;
     data: { token: string; inviteUrl: string } | null;
 };
 
@@ -441,6 +442,14 @@ export async function getAssignableBranches(): Promise<BranchesState> {
 export async function insertInvitation(_prevState: InvitationFormState, formData: FormData): Promise<InvitationFormState> {
     const email = String(formData.get("email") ?? "").trim().toLowerCase();
     const roleId = String(formData.get("role_id") ?? "").trim();
+    const branchIds = Array.from(
+        new Set(
+            formData
+                .getAll("branchId")
+                .map((value) => String(value).trim())
+                .filter(Boolean),
+        ),
+    );
 
     if (!email) {
         return {
@@ -513,6 +522,35 @@ export async function insertInvitation(_prevState: InvitationFormState, formData
         };
     }
 
+    // Las sucursales llegan como checkboxes del formulario: solo aceptamos las
+    // que pertenecen a la organización de quien invita. `accept_invitation` las
+    // copia sin validar la org, así que el filtro va aquí.
+    if (branchIds.length > 0) {
+        const { data: branches, error: branchesError } = await supabase
+            .from("organizations_branches")
+            .select("id")
+            .eq("organization_id", actor.organizationId)
+            .in("id", branchIds);
+
+        if (branchesError) {
+            return {
+                error: branchesError.message,
+                success: null,
+                data: null,
+            };
+        }
+
+        const allowedIds = new Set((branches ?? []).map((branch) => branch.id as string));
+
+        if (branchIds.some((branchId) => !allowedIds.has(branchId))) {
+            return {
+                error: "Una de las sucursales seleccionadas no pertenece a tu organización.",
+                success: null,
+                data: null,
+            };
+        }
+    }
+
     const { data: pending, error: pendingError } = await supabase
         .from("organization_invitations")
         .select("id")
@@ -540,7 +578,7 @@ export async function insertInvitation(_prevState: InvitationFormState, formData
 
     const { token, tokenHash, expiresAt, inviteUrl } = createInvitationToken();
 
-    const { error } = await supabase
+    const { data: invitation, error } = await supabase
         .from("organization_invitations")
         .insert({
             organization_id: actor.organizationId,
@@ -550,7 +588,9 @@ export async function insertInvitation(_prevState: InvitationFormState, formData
             token_hash: tokenHash,
             status: true,
             expires_at: expiresAt,
-        });
+        })
+        .select("id")
+        .single();
 
     if (error) {
         if (error.code === "23505") {
@@ -568,11 +608,31 @@ export async function insertInvitation(_prevState: InvitationFormState, formData
         };
     }
 
+    let branchWarning: string | null = null;
+
+    if (branchIds.length > 0 && invitation) {
+        const { error: branchError } = await supabase
+            .from("invitation_branches")
+            .insert(
+                branchIds.map((branchId) => ({
+                    invitation_id: invitation.id,
+                    branch_id: branchId,
+                })),
+            );
+
+        if (branchError) {
+            // La invitación ya quedó creada: no se pierde. Las sucursales se
+            // pueden asignar después desde "Asignar sucursales" en Miembros.
+            branchWarning = "La invitación se creó, pero no se pudieron asignar las sucursales.";
+        }
+    }
+
     revalidatePath("/miembros");
 
     return {
         error: null,
         success: "Invitación creada correctamente.",
+        warning: branchWarning,
         data: {
             token,
             inviteUrl,

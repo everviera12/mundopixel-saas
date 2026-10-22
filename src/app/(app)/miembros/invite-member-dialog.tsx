@@ -5,6 +5,7 @@ import { HugeiconsIcon } from "@hugeicons/react";
 import { UserAdd01Icon } from "@hugeicons/core-free-icons";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
     Dialog,
     DialogContent,
@@ -31,16 +32,23 @@ type RoleOption = {
     label: string;
 };
 
+type BranchOption = {
+    id: string;
+    name: string;
+};
+
 type InviteMemberDialogProps = {
     roles: RoleOption[];
+    branches: BranchOption[];
 };
 
 type InviteMemberContentProps = {
     roles: RoleOption[];
+    branches: BranchOption[];
     onClose: () => void;
 };
 
-export function InviteMemberDialog({ roles }: InviteMemberDialogProps) {
+export function InviteMemberDialog({ roles, branches }: InviteMemberDialogProps) {
     const [open, setOpen] = useState(false);
 
     return (
@@ -55,13 +63,13 @@ export function InviteMemberDialog({ roles }: InviteMemberDialogProps) {
             />
 
             <DialogContent>
-                <InviteMemberContent roles={roles} onClose={() => setOpen(false)} />
+                <InviteMemberContent roles={roles} branches={branches} onClose={() => setOpen(false)} />
             </DialogContent>
         </Dialog>
     );
 }
 
-function InviteMemberContent({ roles, onClose }: InviteMemberContentProps) {
+function InviteMemberContent({ roles, branches, onClose }: InviteMemberContentProps) {
     const [state, formAction, isPending] = useActionState(insertInvitation, {
         error: null,
         success: null,
@@ -82,6 +90,14 @@ function InviteMemberContent({ roles, onClose }: InviteMemberContentProps) {
 
                 <FieldGroup>
                     <InvitationLink inviteUrl={inviteLink} inputId="invite-link" />
+
+                    {state.warning && (
+                        <Alert className="border-none p-0">
+                            <AlertDescription className="font-medium text-amber-600">
+                                {state.warning}
+                            </AlertDescription>
+                        </Alert>
+                    )}
 
                     <DialogFooter>
                         <Button type="button" onClick={onClose}>Cerrar</Button>
@@ -140,6 +156,33 @@ function InviteMemberContent({ roles, onClose }: InviteMemberContentProps) {
                             El rol define los permisos de la persona cuando acepte la invitación.
                         </FieldDescription>
                     </Field>
+
+                    {branches.length > 0 && (
+                        <Field>
+                            <FieldLabel>Sucursales (opcional)</FieldLabel>
+
+                            <div className="grid gap-2">
+                                {branches.map((branch) => (
+                                    <label
+                                        key={branch.id}
+                                        className="flex cursor-pointer items-center gap-3 rounded-2xl border border-border px-3 py-2.5 text-sm"
+                                    >
+                                        <Checkbox
+                                            name="branchId"
+                                            value={branch.id}
+                                            disabled={isPending}
+                                        />
+                                        <span>{branch.name}</span>
+                                    </label>
+                                ))}
+                            </div>
+
+                            <FieldDescription>
+                                La persona podrá ver estas sucursales al aceptar. Si no seleccionas
+                                ninguna, se le asignan después desde Miembros.
+                            </FieldDescription>
+                        </Field>
+                    )}
 
                     {roles.length === 0 && (
                         <p className="text-sm text-destructive">

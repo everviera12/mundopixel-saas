@@ -103,7 +103,7 @@ export default async function MembersPage() {
                     </p>
                 </div>
 
-                {isManager && <InviteMemberDialog roles={roles} />}
+                {isManager && <InviteMemberDialog roles={roles} branches={branches} />}
             </div>
 
             {loadError && (
