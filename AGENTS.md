@@ -56,7 +56,7 @@ Rutas actuales:
 
 | Ruta | Archivo | Estado |
 |---|---|---|
-| `/` | `src/app/(app)/page.tsx` | Home; solo muestra el nombre (pendiente enriquecer) |
+| `/` | `src/app/(app)/page.tsx` | Completo: dashboard con resumen de organización, sucursales, miembros, invitaciones y accesos rápidos |
 | `/profile` | `src/app/(app)/profile/` | Completo: perfil editable + organización (banner o formulario de alta) |
 | `/sucursales` | `src/app/(app)/sucursales/` | Completo: tabla de sucursales + crear/editar/eliminar |
 | `/sucursales/organizaciones` | `src/app/(app)/sucursales/organizaciones/page.tsx` | Completo: subpágina de solo lectura con todas las organizaciones a las que pertenece el usuario (org propia + invitaciones) |
@@ -428,9 +428,9 @@ Bootstrap importante: `getActorMembership()` (en `members.ts`) crea **perezosame
 
 ## 14. Estado actual
 
-**Completo:** auth (login, sign-up, recuperación y actualización de contraseña, error de cuenta, confirmación), sidebar con menú de usuario, perfil editable, alta de organización desde `/profile`, CRUD de sucursales, gestión de miembros multi-organización (selector `?org=` con gating por rol en `/miembros`; roles, borrado, invitaciones con enlace copiable y sucursales preasignadas, asignación de sucursales), auto-alta de invitados al confirmar el correo o iniciar sesión con el enlace de invitación, sesión de Supabase vía proxy.
+**Completo:** auth (login, sign-up, recuperación y actualización de contraseña, error de cuenta, confirmación), sidebar con menú de usuario, perfil editable, alta de organización desde `/profile`, CRUD de sucursales, gestión de miembros multi-organización (selector `?org=` con gating por rol en `/miembros`; roles, borrado, invitaciones con enlace copiable y sucursales preasignadas, asignación de sucursales), auto-alta de invitados al confirmar el correo o iniciar sesión con el enlace de invitación, sesión de Supabase vía proxy, home con dashboard de cards (resumen de organización, sucursales, miembros, invitaciones y accesos rápidos).
 
-**Pendiente:** el home (solo muestra el nombre), la `metadata` de los layouts raíz (texto de create-next-app), el `README.md`, y las deudas de DB de §13.8.
+**Pendiente:** la `metadata` de los layouts raíz (texto de create-next-app), el `README.md`, y las deudas de DB de §13.8.
 
 ## 15. Reglas de trabajo
 
