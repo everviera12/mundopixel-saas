@@ -25,7 +25,7 @@ export function OrganizationForm() {
                         <div className="grid gap-1">
                             <span className="text-base font-medium">Crea tu organización</span>
                             <span className="text-sm text-muted-foreground">
-                                Aún no tienes una organización registrada.
+                                Aún no tienes una organización propia.
                             </span>
                         </div>
 
