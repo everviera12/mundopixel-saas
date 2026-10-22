@@ -137,11 +137,12 @@ La acción `insertUserInfo` en `src/lib/actions/profiles.ts` valida sesión → 
 ## 8. Feature map: sucursales y miembros
 
 - **`/sucursales`**: `page.tsx` (server) llama `getOrganizationBranches()` + `getOrganization()` (para el nombre en el título). UI en `Table`, `BranchForm` (crear, `useActionState(insertOrganizationBranch)`) y `BranchRowMenu` (dropdown por fila → editar con `Dialog`/`updateOrganizationBranch`, eliminar con `AlertDialog`/`deleteOrganizationBranch`). Un member sin org propia (invitado) ve título + `MembershipBanner` con su org y cargo; sin formulario ni tabla (RLS no le permite leer `organizations_branches`). En ambos estados, si tiene memberships, aparece el link a **Mis organizaciones**.
-- **`/sucursales/organizaciones`** (subpágina, solo lectura): lista todas las organizaciones a las que pertenece el usuario (org propia + invitaciones aceptadas) con nombre, slug y badge de rol, usando `getMyMemberships` de `members.ts` y reutilizando `OrganizationBanner` del perfil. Sin acciones. Un usuario puede ser owner de su org y member de otra al mismo tiempo: `getActorMembership` prioriza siempre la org propia, así que `/sucursales` y `/miembros` operan sobre ella.
-- **`/miembros`**: `page.tsx` (server) resuelve la membresía del usuario (`getMyMembership`; usa `canManageMembers` = rol `owner` o `admin`) y carga en paralelo members, roles, invitaciones y sucursales (`Promise.all`).
+- **`/sucursales/organizaciones`** (subpágina, solo lectura): lista todas las organizaciones a las que pertenece el usuario (org propia + invitaciones aceptadas) con nombre, slug y badge de rol, usando `getMyMemberships` de `members.ts` y reutilizando `OrganizationBanner` del perfil. Sin acciones. Un usuario puede ser owner de su org y member de otra al mismo tiempo: `getActorMembership` prioriza siempre la org propia, así que `/sucursales` opera sobre ella (ver `/miembros` para el cambio de organización).
+- **`/miembros`**: `page.tsx` (server) lista **todas** las membresías (`getMyMemberships`) y permite cambiar de organización con pills (`?org=<uuid>`, validado contra la lista; por defecto la org propia o la primera membresía). Carga en paralelo members, roles, invitaciones y sucursales (`Promise.all`) **de la organización seleccionada** (`getMembers(orgId)`, `getAssignableRoles(orgId)`, `getPendingInvitations(orgId)`, `getAssignableBranches(orgId)`).
+  - Gating por rol **en esa organización**: `canManage` = `owner`/`admin` (menús de fila + sucursales), `canInvite` = `owner`/`admin`/`manager` (botón "Invitar miembro" + sección de invitaciones). `salesperson` u otro rol ve la tabla solo lectura. Las actions validan el rol en la org del recurso (miembro o invitación) y RLS es la defensa final.
   - `MembersTable`: badges de rol, `MemberRowMenu` → cambiar rol (`setMemberRole`), eliminar (`deleteMember` con `AlertDialog`), asignar sucursales (`MemberBranchesDialog`, checkbox por sucursal → `getMemberBranchIds` + `setMemberBranches`).
-  - `InviteMemberDialog` → `insertInvitation` devuelve `{ token, inviteUrl }` (enlace `/invite/[token]` copiable con `navigator.clipboard`).
-  - `InvitationsTable` → revocar (`deleteInvitation` con `AlertDialog`) y regenerar el enlace (`regenerateInvitation`). La columna **Registrarse** usa `get_pending_invitation_email_states` vía `getPendingInvitations`: ✓ verde = el correo no tiene cuenta (puede registrarse), ✗ rojo = ya existe una cuenta (debe iniciar sesión y aceptar); “–” si la RPC falla o no está disponible.
+  - `InviteMemberDialog` → `insertInvitation` recibe la organización por hidden input (`organizationId`) y devuelve `{ token, inviteUrl }` (enlace `/invite/[token]` copiable con `navigator.clipboard`). El formulario permite marcar **sucursales opcionales** (`branchId`): se guardan en `invitation_branches` y `accept_invitation` las copia al aceptar; si el insert de sucursales falla, la invitación se crea igual y se avisa (`warning`). Un `manager` solo puede invitar con rol gerente/vendedor y no ve la sección de sucursales (RLS no se las lista).
+  - `InvitationsTable` → revocar (`deleteInvitation` con `AlertDialog`) y regenerar el enlace (`regenerateInvitation`; prop `canRegenerate` lo oculta a los managers). La columna **Registrarse** usa `get_pending_invitation_email_states` vía `getPendingInvitations`: ✓ verde = el correo no tiene cuenta (puede registrarse), ✗ rojo = ya existe una cuenta (debe iniciar sesión y aceptar); “–” si la RPC falla, no está disponible o el caller no es owner/admin.
 - El núcleo de aceptación vive en `src/lib/invitations.ts` (`acceptInvitationCore`: valida que la invitación exista, esté pendiente, no haya expirado y que el correo de la sesión coincida → `ensureProfile` → RPC `accept_invitation`). La aceptación es **automática**: al confirmar el correo (`/confirmed`) o al iniciar sesión con `next=/invite/...` (`signInWithEmail`); si sale bien redirige a `/sucursales` (donde el nuevo miembro ve su card) y si falla vuelve a `/invite/[token]`, donde el botón manual "Aceptar invitación" queda como respaldo.
 
 ## 9. Componentes UI: Base UI, NO Radix
@@ -234,6 +235,7 @@ Helpers (`SECURITY DEFINER`, `search_path` fijado, llamables por RLS y por la ap
 
 - `is_org_owner_or_admin(p_organization_id uuid)` → owner por `owner_user_id` **o** member con rol `owner`/`admin`.
 - `is_org_member(p_organization_id uuid)` → delega en el anterior + member normal.
+- `is_org_manager(p_organization_id uuid)` → member con rol `manager` (agregado el 22-10-2026; solo lo usan las policies de invitaciones).
 - `shares_organization(target_user_id uuid)` → comparte alguna organización vía `organization_members` (solo mira members, no owner_user_id).
 
 **Distinción clave**: el rol `owner` en `organization_members` **no** es lo mismo que `organizations.owner_user_id`. Los helpers tratan ambos como "nivel owner/admin". Las policies de sucursales siguen mirando solo `owner_user_id`; el SELECT de `organizations` ya acepta también members vía `is_org_member` (ver §13.4).
@@ -250,7 +252,7 @@ roles 1—N organization_members
 roles ?—N organization_invitations (por confirmar: FK no en DDL aportado)
 organization_members 1—N organizations_branch_members
 organizations_branches 1—N organizations_branch_members
-organization_invitations 1—N invitation_branches (⚠️ PK actual limita a 1)
+organization_invitations 1—N invitation_branches
 organizations_branches 1—N invitation_branches
 ```
 
@@ -337,16 +339,16 @@ Unique: `(organization_member_id, branch_id)`. RLS: SELECT para members de la or
 | `expires_at` | timestamptz | no | 7 días (constante `INVITATION_EXPIRATION_DAYS`) |
 | `created_at` | timestamptz | no | |
 
-RLS: SELECT/INSERT/DELETE/UPDATE para owner/admin. La policy de UPDATE (agregada a mano el 21-10-2026) usa `is_org_owner_or_admin` en USING y WITH CHECK, y **permite cambiar cualquier columna** (ver gotcha en §13.8).
+RLS: SELECT/INSERT/DELETE/UPDATE para owner/admin. La policy de UPDATE (agregada a mano el 21-10-2026) usa `is_org_owner_or_admin` en USING y WITH CHECK, y **permite cambiar cualquier columna** (ver gotcha en §13.8). Desde el 22-10-2026 existe además el helper `is_org_manager(p_organization_id)` y tres policies para managers: **SELECT**, **INSERT** (con guard: el `role_id` invitado debe ser `manager` o `salesperson`, nunca `owner`/`admin`) y **DELETE**. A propósito **no** hay policy de UPDATE para manager: regenerar toca `role_id`/`organization_id`/`token_hash` y permitiría escalar privilegios; "Generar nuevo enlace" queda solo para owner/admin.
 
 #### `invitation_branches`
 
 | Columna | Tipo | Default | Null | Notas |
 |---|---|---|---|---|
-| `invitation_id` | uuid | ⚠️ gen_random_uuid() | no | **PK** (limita a 1 sucursal por invitación); FK → `organization_invitations(id)` CASCADE |
-| `branch_id` | uuid | — | sí | FK → `organizations_branches(id)` CASCADE |
+| `invitation_id` | uuid | — | no | **PK compuesta** con `branch_id`; FK → `organization_invitations(id)` CASCADE |
+| `branch_id` | uuid | — | no | **PK compuesta** con `invitation_id`; FK → `organizations_branches(id)` CASCADE |
 
-RLS: **sin policies** en el dump; confirmar si tiene RLS activado.
+RLS: activo con policies `select`/`insert`/`delete` para owner/admin de la organización de la invitación (`is_org_owner_or_admin` sobre el `organization_id` de `organization_invitations`). Sin policy de UPDATE: cambiar la selección es borrar + insertar.
 
 #### `roles`
 
@@ -367,8 +369,8 @@ RLS: SELECT libre para authenticated; **sin escritura** (el seed va por SQL/dash
 | `organization_members` | members de la org | owner/admin | owner/admin | owner/admin |
 | `organizations_branches` | owner/admin | solo owner | solo owner | solo owner |
 | `organizations_branch_members` | members de la org | owner/admin | ❌ | owner/admin |
-| `organization_invitations` | owner/admin | owner/admin | owner/admin ⚠️ (cualquier columna) | owner/admin |
-| `invitation_branches` | (sin policies) | ? | ? | ? |
+| `organization_invitations` | owner/admin + manager (su org) | owner/admin; manager solo con rol invitado manager/salesperson | owner/admin ⚠️ (cualquier columna); manager ❌ | owner/admin + manager (su org) |
+| `invitation_branches` | owner/admin de la org de la invitación | owner/admin | ❌ | owner/admin |
 | `roles` | todos los authenticated | ❌ | ❌ | ❌ |
 
 ### 13.6 Funciones RPC
@@ -377,7 +379,7 @@ RLS: SELECT libre para authenticated; **sin escritura** (el seed va por SQL/dash
   1. Busca la invitación por `token_hash` (errores: `invitation_not_found`).
   2. Valida `status = true` y expiración (`invitation_not_valid`).
   3. Valida que el email del JWT coincida (`email_mismatch`).
-  4. Hace upsert del member (`organization_members`, `on conflict do update` con `role_id`, `status = true`) y copia las sucursales de `invitation_branches` a `organizations_branch_members` (`on conflict do nothing`).
+  4. Hace upsert del member (`organization_members`, `on conflict do update` con `role_id`, `status = true`) y copia las sucursales de `invitation_branches` (la app las escribe al invitar con sucursales preasignadas) a `organizations_branch_members` (`on conflict do nothing`).
   5. Marca `status = false` en la invitación. Devuelve el `id` del member.
 - **`get_invitation_by_token(p_token_hash text)`** → tabla `(organization_name, email, role_name, status, expires_at, invitation_id)`. `SECURITY DEFINER`, pensada para renderizar la pantalla pública de invitación.
 - **`get_pending_invitation_email_states(p_organization_id uuid)`** → tabla `(invitation_id, email, can_register)`.
@@ -406,14 +408,14 @@ Bootstrap importante: `getActorMembership()` (en `members.ts`) crea **perezosame
 
 1. **Resuelto: el sign-up ya crea el perfil.** El trigger `on_auth_user_created` (`after insert on auth.users`) ejecuta `handle_new_user()`, que inserta en `profiles` con `first_name`/`last_name` de `raw_user_meta_data` (`SECURITY DEFINER`, `on conflict do nothing`). Además la app tiene el respaldo `ensureProfile` (`src/lib/profiles.ts`), usado por `insertOrganization` y `acceptInvitationCore`, para cuentas anteriores al trigger o entornos sin él. El backfill de perfiles faltantes ya se ejecutó (22-10-2026).
 2. **Resuelto: `profiles` ya tiene policy de UPDATE.** Policy `profiles update own` (`using` y `with check` con `auth.uid() = id`, agregada el 22-10-2026), así que el `upsert` de `insertUserInfo` funciona tanto en INSERT como en UPDATE. Sigue sin policy de DELETE.
-3. **`invitation_branches` tiene la PK mal**: `primary key (invitation_id)` permite solo una sucursal por invitación, contradice el nombre y `accept_invitation`. Debe ser `(invitation_id, branch_id)` (o `id` propio + unique). Además, `invitation_id` con `default gen_random_uuid()` sobra (igual que `organizations.owner_user_id`).
+3. **Resuelto: `invitation_branches` ya tiene la PK correcta.** Migrada el 22-10-2026 a `primary key (invitation_id, branch_id)`, `branch_id` NOT NULL y sin default en `invitation_id`; con policies de owner/admin. La app permite preasignar varias sucursales al invitar (`insertInvitation` valida que sean de la org) y `accept_invitation` las copia.
 4. **`status` es decorativo**: ni `is_org_member`, ni `is_org_owner_or_admin`, ni las policies de organizations/branches consultan `status`. Un member desactivado o una sucursal "off" siguen funcionando igual. Definir qué es antes de usarlas.
 5. **`roles` frágil**: `name` nullable y sin unique. `getActorMembership` hace `.eq("name", "owner").maybeSingle()`; un seed duplicado rompe esa consulta. Además, RLS permite a un admin asignar `role_id = owner` por API aunque la app lo evite con `getAssignableRole` (que filtra con `neq("name", "owner")`).
 6. **`organizations` sin UPDATE/DELETE**: no se puede renombrar/eliminar la organización desde el cliente.
 7. **Resuelto: SELECT de `organizations` para members.** La policy `organizations select for members` (`is_org_member(id)`) permite que un invitado lea su organización; `getActorMembership` llena `organizationName` y `organizationSlug` vía embed. Sigue **sin UPDATE/DELETE**: el member no puede editar la org.
 8. **Sucursales: admins solo miran.** Crear/editar/eliminar es exclusivo del owner aunque el helper diga "owner_or_admin".
 9. **`organizations_branches` sin unique `(organization_id, slug)`**: el chequeo de duplicados es solo de la app; dos requests concurrentes pueden duplicar. `name`/`slug` nullable agravan.
-10. **La policy de UPDATE de invitations permite cambiar cualquier columna**, incluida `organization_id`: un admin de dos orgs podría mover una invitación de una a otra y `invitation_branches` quedaría apuntando a sucursales de la org vieja (y `accept_invitation` no valida esa coherencia). Si solo se quiere revocar: `grant update (status) ...` o un trigger que impida tocar `organization_id`/`token_hash`.
+10. **La policy de UPDATE de invitations permite cambiar cualquier columna**, incluida `organization_id`: un admin de dos orgs podría mover una invitación de una a otra y `invitation_branches` quedaría apuntando a sucursales de la org vieja (y `accept_invitation` no valida esa coherencia). Si solo se quiere revocar: `grant update (status) ...` o un trigger que impida tocar `organization_id`/`token_hash`. Mitigación parcial (22-10-2026): los managers **no** tienen UPDATE; la app oculta "Generar nuevo enlace" para ellos y `regenerateInvitation` exige owner/admin en la org de la invitación.
 11. **`shares_organization` solo mira `organization_members`**: si un owner se borra de members pierde visibilidad de perfiles de su equipo.
 12. **Cascada destructiva** desde `profiles` (borrar el perfil del owner = borrar toda la organización). Confirmar intención.
 13. **Sin triggers en `public`**: nada mantiene `updated_at` automáticamente; si lo necesitas, actualízalo en la action o agrega el trigger.
@@ -421,11 +423,12 @@ Bootstrap importante: `getActorMembership()` (en `members.ts`) crea **perezosame
 ### 13.9 Pendientes de confirmar con más queries
 
 - DDL exacto de `profiles` y `organization_invitations` (columnas de arriba son inferidas del código).
-- `relrowsecurity` por tabla: ¿RLS habilitado en todas? ¿`invitation_branches` tiene RLS?
+- `relrowsecurity` por tabla: ¿RLS habilitado en todas? `invitation_branches` confirmado: RLS activo + policies de owner/admin (22-10-2026).
+- Guard interno de `get_pending_invitation_email_states`: sigue siendo `is_org_owner_or_admin`. Para que un manager vea la columna "Registrarse" real hay que reemplazar la función añadiendo `or is_org_manager(p_organization_id)` (pendiente: requiere el `pg_get_functiondef` actual). Mientras tanto un manager ve "–".
 
 ## 14. Estado actual
 
-**Completo:** auth (login, sign-up, recuperación y actualización de contraseña, error de cuenta, confirmación), sidebar con menú de usuario, perfil editable, alta de organización desde `/profile`, CRUD de sucursales, gestión de miembros (roles, borrado, invitaciones con enlace copiable, asignación de sucursales), auto-alta de invitados al confirmar el correo o iniciar sesión con el enlace de invitación, sesión de Supabase vía proxy.
+**Completo:** auth (login, sign-up, recuperación y actualización de contraseña, error de cuenta, confirmación), sidebar con menú de usuario, perfil editable, alta de organización desde `/profile`, CRUD de sucursales, gestión de miembros multi-organización (selector `?org=` con gating por rol en `/miembros`; roles, borrado, invitaciones con enlace copiable y sucursales preasignadas, asignación de sucursales), auto-alta de invitados al confirmar el correo o iniciar sesión con el enlace de invitación, sesión de Supabase vía proxy.
 
 **Pendiente:** el home (solo muestra el nombre), la `metadata` de los layouts raíz (texto de create-next-app), el `README.md`, y las deudas de DB de §13.8.
 
