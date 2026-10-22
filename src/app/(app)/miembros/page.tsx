@@ -1,11 +1,14 @@
+import Link from "next/link";
 import { Separator } from "@/components/ui/separator";
 import {
     getAssignableBranches,
     getAssignableRoles,
     getMembers,
     getMyMembership,
+    getMyMemberships,
     getPendingInvitations,
 } from "@/lib/actions/members";
+import { cn } from "@/lib/utils";
 import { InvitationsTable } from "./invitations-table";
 import { InviteMemberDialog } from "./invite-member-dialog";
 import { MembersTable } from "./members-table";
@@ -25,27 +28,40 @@ function getRoleLabel(roleName: string | null) {
     return ROLE_LABELS[roleName] ?? roleName;
 }
 
-export default async function MembersPage() {
-    const membership = await getMyMembership();
+export default async function MembersPage({ searchParams }: PageProps<"/miembros">) {
+    const params = await searchParams;
+    const requestedOrganizationId = typeof params.org === "string" ? params.org : null;
 
-    if (!membership) {
+    const memberships = await getMyMemberships();
+
+    if (memberships.length === 0) {
         return (
             <div className="p-6">
                 <h1 className="text-xl font-semibold">Miembros</h1>
                 <p className="mt-4 text-sm text-destructive">
-                    No tienes una organización registrada.
+                    No perteneces a ninguna organización.
                 </p>
             </div>
         );
     }
 
-    const isManager = membership.roleName === "owner" || membership.roleName === "admin";
+    // Contexto por defecto: la organización propia si existe; si no, la primera
+    // membresía. El ?org= solo se respeta si es una organización del usuario.
+    const defaultMembership = await getMyMembership();
+
+    const membership =
+        memberships.find((item) => item.organizationId === requestedOrganizationId) ??
+        defaultMembership ??
+        memberships[0];
+
+    const canManage = membership.roleName === "owner" || membership.roleName === "admin";
+    const canInvite = canManage || membership.roleName === "manager";
 
     const [membersResponse, rolesResponse, invitationsResponse, branchesResponse] = await Promise.all([
-        getMembers(),
-        getAssignableRoles(),
-        getPendingInvitations(),
-        getAssignableBranches(),
+        getMembers(membership.organizationId),
+        getAssignableRoles(membership.organizationId),
+        getPendingInvitations(membership.organizationId),
+        getAssignableBranches(membership.organizationId),
     ]);
 
     if (membersResponse.error) {
@@ -99,12 +115,43 @@ export default async function MembersPage() {
                 <div>
                     <h1 className="text-2xl font-semibold tracking-tight">Miembros</h1>
                     <p className="text-sm text-muted-foreground">
-                        Administra el equipo de {membership.organizationName ?? "tu organización"}.
+                        {canInvite ? "Administra el equipo de" : "Consulta el equipo de"}{" "}
+                        {membership.organizationName ?? "tu organización"}.
                     </p>
                 </div>
 
-                {isManager && <InviteMemberDialog roles={roles} branches={branches} />}
+                {canInvite && (
+                    <InviteMemberDialog
+                        roles={roles}
+                        branches={branches}
+                        organizationId={membership.organizationId}
+                    />
+                )}
             </div>
+
+            {memberships.length > 1 && (
+                <nav className="flex flex-wrap items-center gap-2" aria-label="Organizaciones">
+                    {memberships.map((item) => {
+                        const isActive = item.organizationId === membership.organizationId;
+
+                        return (
+                            <Link
+                                key={item.organizationId}
+                                href={{ pathname: "/miembros", query: { org: item.organizationId } }}
+                                aria-current={isActive ? "page" : undefined}
+                                className={cn(
+                                    "rounded-4xl border px-3 py-1.5 text-sm font-medium transition-colors",
+                                    isActive
+                                        ? "border-primary bg-primary text-primary-foreground"
+                                        : "border-border bg-muted/50 text-muted-foreground hover:text-foreground",
+                                )}
+                            >
+                                {item.organizationName ?? "Organización"}
+                            </Link>
+                        );
+                    })}
+                </nav>
+            )}
 
             {loadError && (
                 <p className="text-sm text-destructive">{loadError}</p>
@@ -118,11 +165,11 @@ export default async function MembersPage() {
                     roles={roles}
                     branches={branches}
                     currentMemberId={membership.memberId}
-                    canManage={isManager}
+                    canManage={canManage}
                 />
             </section>
 
-            {isManager && (
+            {canInvite && (
                 <>
                     <Separator />
 
@@ -134,7 +181,7 @@ export default async function MembersPage() {
                             </p>
                         </div>
 
-                        <InvitationsTable invitations={invitations} />
+                        <InvitationsTable invitations={invitations} canRegenerate={canManage} />
                     </section>
                 </>
             )}

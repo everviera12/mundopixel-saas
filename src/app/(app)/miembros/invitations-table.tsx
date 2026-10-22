@@ -53,9 +53,10 @@ type InvitationItem = {
 
 type InvitationsTableProps = {
     invitations: InvitationItem[];
+    canRegenerate: boolean;
 };
 
-export function InvitationsTable({ invitations }: InvitationsTableProps) {
+export function InvitationsTable({ invitations, canRegenerate }: InvitationsTableProps) {
     return (
         <Table>
             <TableHeader>
@@ -125,6 +126,7 @@ export function InvitationsTable({ invitations }: InvitationsTableProps) {
                                 <InvitationRowActions
                                     invitationId={invitation.id}
                                     email={invitation.email}
+                                    canRegenerate={canRegenerate}
                                 />
                             </TableCell>
                         </TableRow>
@@ -141,7 +143,15 @@ export function InvitationsTable({ invitations }: InvitationsTableProps) {
     );
 }
 
-function InvitationRowActions({ invitationId, email }: { invitationId: string; email: string }) {
+function InvitationRowActions({
+    invitationId,
+    email,
+    canRegenerate,
+}: {
+    invitationId: string;
+    email: string;
+    canRegenerate: boolean;
+}) {
     const [regenerateOpen, setRegenerateOpen] = useState(false);
     const [linkOpen, setLinkOpen] = useState(false);
     const [deleteOpen, setDeleteOpen] = useState(false);
@@ -192,16 +202,20 @@ function InvitationRowActions({ invitationId, email }: { invitationId: string; e
                 />
 
                 <DropdownMenuContent align="end">
-                    <DropdownMenuItem
-                        onClick={() => {
-                            setRegenerateError(null);
-                            setRegenerateOpen(true);
-                        }}
-                    >
-                        Generar nuevo enlace
-                    </DropdownMenuItem>
+                    {canRegenerate && (
+                        <>
+                            <DropdownMenuItem
+                                onClick={() => {
+                                    setRegenerateError(null);
+                                    setRegenerateOpen(true);
+                                }}
+                            >
+                                Generar nuevo enlace
+                            </DropdownMenuItem>
 
-                    <DropdownMenuSeparator />
+                            <DropdownMenuSeparator />
+                        </>
+                    )}
 
                     <DropdownMenuItem
                         variant="destructive"

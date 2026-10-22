@@ -40,15 +40,17 @@ type BranchOption = {
 type InviteMemberDialogProps = {
     roles: RoleOption[];
     branches: BranchOption[];
+    organizationId: string;
 };
 
 type InviteMemberContentProps = {
     roles: RoleOption[];
     branches: BranchOption[];
+    organizationId: string;
     onClose: () => void;
 };
 
-export function InviteMemberDialog({ roles, branches }: InviteMemberDialogProps) {
+export function InviteMemberDialog({ roles, branches, organizationId }: InviteMemberDialogProps) {
     const [open, setOpen] = useState(false);
 
     return (
@@ -63,13 +65,18 @@ export function InviteMemberDialog({ roles, branches }: InviteMemberDialogProps)
             />
 
             <DialogContent>
-                <InviteMemberContent roles={roles} branches={branches} onClose={() => setOpen(false)} />
+                <InviteMemberContent
+                    roles={roles}
+                    branches={branches}
+                    organizationId={organizationId}
+                    onClose={() => setOpen(false)}
+                />
             </DialogContent>
         </Dialog>
     );
 }
 
-function InviteMemberContent({ roles, branches, onClose }: InviteMemberContentProps) {
+function InviteMemberContent({ roles, branches, organizationId, onClose }: InviteMemberContentProps) {
     const [state, formAction, isPending] = useActionState(insertInvitation, {
         error: null,
         success: null,
@@ -122,6 +129,8 @@ function InviteMemberContent({ roles, branches, onClose }: InviteMemberContentPr
             </DialogHeader>
 
             <form action={formAction}>
+                <input type="hidden" name="organizationId" value={organizationId} />
+
                 <FieldGroup>
                     <Field>
                         <FieldLabel htmlFor="invite-email">Correo electrónico</FieldLabel>

@@ -95,9 +95,19 @@ type ServerSupabase = ServerSession["supabase"];
 const INVITATION_EXPIRATION_DAYS = 7;
 
 const MANAGER_ROLES = ["owner", "admin"];
+const INVITER_ROLES = ["owner", "admin", "manager"];
 
 function canManageMembers(roleName: string | null) {
     return roleName !== null && MANAGER_ROLES.includes(roleName);
+}
+
+/**
+ * El gerente puede invitar y revocar invitaciones, pero no gestionar members
+ * (cambiar roles, eliminar, asignar sucursales). RLS lo respalda: las policies
+ * de manager cubren solo organization_invitations.
+ */
+function canInviteMembers(roleName: string | null) {
+    return roleName !== null && INVITER_ROLES.includes(roleName);
 }
 
 function createInvitationToken() {
@@ -236,6 +246,42 @@ async function getActorMembership(supabase: ServerSupabase, userId: string): Pro
     };
 }
 
+/**
+ * Membresía del usuario en una organización concreta (la use para operar sobre
+ * cualquier org a la que pertenezca, no solo la propia). Es de solo lectura: el
+ * bootstrap perezoso de la fila del owner sigue viviendo en getActorMembership.
+ */
+async function getMembershipInOrg(
+    supabase: ServerSupabase,
+    userId: string,
+    organizationId: string,
+): Promise<MyMembership | null> {
+    const { data: membership } = await supabase
+        .from("organization_members")
+        .select("id, organization_id, role_id, roles(name), organizations(name, slug)")
+        .eq("organization_id", organizationId)
+        .eq("user_id", userId)
+        .maybeSingle();
+
+    if (!membership) {
+        return null;
+    }
+
+    const role = normalizeRelated<{ name: string | null }>(membership.roles);
+    const organization = normalizeRelated<{ name: string | null; slug: string | null }>(
+        membership.organizations,
+    );
+
+    return {
+        organizationId: membership.organization_id as string,
+        organizationName: organization?.name ?? null,
+        organizationSlug: organization?.slug ?? null,
+        memberId: membership.id as string,
+        roleId: membership.role_id as string | null,
+        roleName: role?.name ?? null,
+    };
+}
+
 async function getAssignableRole(supabase: ServerSupabase, roleId: string) {
     const { data: role, error } = await supabase
         .from("roles")
@@ -298,7 +344,17 @@ export async function getMyMemberships(): Promise<MyMembership[]> {
     });
 }
 
-export async function getMembers(): Promise<MembersState> {
+export async function getMembers(organizationId: string): Promise<MembersState> {
+    const targetOrganizationId = organizationId.trim();
+
+    if (!targetOrganizationId) {
+        return {
+            error: "Selecciona una organización.",
+            success: null,
+            data: null,
+        };
+    }
+
     const session = await requireUser();
 
     if (!session) {
@@ -309,12 +365,12 @@ export async function getMembers(): Promise<MembersState> {
         };
     }
 
-    const { supabase } = session;
-    const actor = await getActorMembership(supabase, session.user.id);
+    const { supabase, user } = session;
+    const actor = await getMembershipInOrg(supabase, user.id, targetOrganizationId);
 
     if (!actor) {
         return {
-            error: "No tienes una organización registrada.",
+            error: "No perteneces a esta organización.",
             success: null,
             data: null,
         };
@@ -354,7 +410,17 @@ export async function getMembers(): Promise<MembersState> {
     };
 }
 
-export async function getAssignableRoles(): Promise<RolesState> {
+export async function getAssignableRoles(organizationId: string): Promise<RolesState> {
+    const targetOrganizationId = organizationId.trim();
+
+    if (!targetOrganizationId) {
+        return {
+            error: "Selecciona una organización.",
+            success: null,
+            data: null,
+        };
+    }
+
     const session = await requireUser();
 
     if (!session) {
@@ -365,7 +431,18 @@ export async function getAssignableRoles(): Promise<RolesState> {
         };
     }
 
-    const { data, error } = await session.supabase
+    const { supabase, user } = session;
+    const actor = await getMembershipInOrg(supabase, user.id, targetOrganizationId);
+
+    if (!actor) {
+        return {
+            error: "No perteneces a esta organización.",
+            success: null,
+            data: null,
+        };
+    }
+
+    const { data, error } = await supabase
         .from("roles")
         .select("id, name")
         .neq("name", "owner")
@@ -379,7 +456,13 @@ export async function getAssignableRoles(): Promise<RolesState> {
         };
     }
 
-    const roles: RoleOption[] = (data ?? []).map((role) => ({
+    // Un gerente no puede invitar con más privilegios que los suyos: solo
+    // gerente o vendedor. Owner/admin conservan admin, gerente y vendedor.
+    const roleRows = (data ?? []).filter(
+        (role) => actor.roleName !== "manager" || role.name !== "admin",
+    );
+
+    const roles: RoleOption[] = roleRows.map((role) => ({
         id: role.id as string,
         name: role.name as string,
     }));
@@ -391,7 +474,17 @@ export async function getAssignableRoles(): Promise<RolesState> {
     };
 }
 
-export async function getAssignableBranches(): Promise<BranchesState> {
+export async function getAssignableBranches(organizationId: string): Promise<BranchesState> {
+    const targetOrganizationId = organizationId.trim();
+
+    if (!targetOrganizationId) {
+        return {
+            error: "Selecciona una organización.",
+            success: null,
+            data: null,
+        };
+    }
+
     const session = await requireUser();
 
     if (!session) {
@@ -402,12 +495,12 @@ export async function getAssignableBranches(): Promise<BranchesState> {
         };
     }
 
-    const { supabase } = session;
-    const actor = await getActorMembership(supabase, session.user.id);
+    const { supabase, user } = session;
+    const actor = await getMembershipInOrg(supabase, user.id, targetOrganizationId);
 
     if (!actor) {
         return {
-            error: "No tienes una organización registrada.",
+            error: "No perteneces a esta organización.",
             success: null,
             data: null,
         };
@@ -440,6 +533,7 @@ export async function getAssignableBranches(): Promise<BranchesState> {
 }
 
 export async function insertInvitation(_prevState: InvitationFormState, formData: FormData): Promise<InvitationFormState> {
+    const organizationId = String(formData.get("organizationId") ?? "").trim();
     const email = String(formData.get("email") ?? "").trim().toLowerCase();
     const roleId = String(formData.get("role_id") ?? "").trim();
     const branchIds = Array.from(
@@ -450,6 +544,14 @@ export async function insertInvitation(_prevState: InvitationFormState, formData
                 .filter(Boolean),
         ),
     );
+
+    if (!organizationId) {
+        return {
+            error: "Selecciona una organización para la invitación.",
+            success: null,
+            data: null,
+        };
+    }
 
     if (!email) {
         return {
@@ -485,18 +587,18 @@ export async function insertInvitation(_prevState: InvitationFormState, formData
         };
     }
 
-    const { supabase } = session;
-    const actor = await getActorMembership(supabase, session.user.id);
+    const { supabase, user } = session;
+    const actor = await getMembershipInOrg(supabase, user.id, organizationId);
 
     if (!actor) {
         return {
-            error: "No tienes una organización registrada.",
+            error: "No perteneces a esta organización.",
             success: null,
             data: null,
         };
     }
 
-    if (!canManageMembers(actor.roleName)) {
+    if (!canInviteMembers(actor.roleName)) {
         return {
             error: "No tienes permiso para invitar miembros.",
             success: null,
@@ -517,6 +619,24 @@ export async function insertInvitation(_prevState: InvitationFormState, formData
     if (!role) {
         return {
             error: "El rol seleccionado no es válido.",
+            success: null,
+            data: null,
+        };
+    }
+
+    // Un gerente no puede crear invitaciones con rol admin (escalada). La
+    // policy de INSERT en la DB aplica el mismo límite como respaldo.
+    if (actor.roleName === "manager" && role.name === "admin") {
+        return {
+            error: "Como gerente solo puedes invitar con rol Gerente o Vendedor.",
+            success: null,
+            data: null,
+        };
+    }
+
+    if (branchIds.length > 0 && !canManageMembers(actor.roleName)) {
+        return {
+            error: "No tienes permiso para asignar sucursales en la invitación.",
             success: null,
             data: null,
         };
@@ -661,30 +781,14 @@ export async function regenerateInvitation(invitationId: string): Promise<Invita
         };
     }
 
-    const { supabase } = session;
-    const actor = await getActorMembership(supabase, session.user.id);
+    const { supabase, user } = session;
 
-    if (!actor) {
-        return {
-            error: "No tienes una organización registrada.",
-            success: null,
-            data: null,
-        };
-    }
-
-    if (!canManageMembers(actor.roleName)) {
-        return {
-            error: "No tienes permiso para regenerar invitaciones.",
-            success: null,
-            data: null,
-        };
-    }
-
+    // La policy de SELECT de invitaciones es solo owner/admin: un gerente no
+    // puede leer esta fila, así que este fetch es también el chequeo de acceso.
     const { data: invitation, error: invitationError } = await supabase
         .from("organization_invitations")
-        .select("id")
+        .select("id, organization_id")
         .eq("id", targetInvitationId)
-        .eq("organization_id", actor.organizationId)
         .eq("status", true)
         .maybeSingle();
 
@@ -698,7 +802,25 @@ export async function regenerateInvitation(invitationId: string): Promise<Invita
 
     if (!invitation) {
         return {
-            error: "La invitación no existe o ya fue revocada.",
+            error: "La invitación no existe, ya fue revocada o no tienes permiso para regenerarla.",
+            success: null,
+            data: null,
+        };
+    }
+
+    const actor = await getMembershipInOrg(supabase, user.id, invitation.organization_id as string);
+
+    if (!actor) {
+        return {
+            error: "No perteneces a esta organización.",
+            success: null,
+            data: null,
+        };
+    }
+
+    if (!canManageMembers(actor.roleName)) {
+        return {
+            error: "No tienes permiso para regenerar invitaciones.",
             success: null,
             data: null,
         };
@@ -745,7 +867,17 @@ export async function regenerateInvitation(invitationId: string): Promise<Invita
     };
 }
 
-export async function getPendingInvitations(): Promise<InvitationsState> {
+export async function getPendingInvitations(organizationId: string): Promise<InvitationsState> {
+    const targetOrganizationId = organizationId.trim();
+
+    if (!targetOrganizationId) {
+        return {
+            error: "Selecciona una organización.",
+            success: null,
+            data: null,
+        };
+    }
+
     const session = await requireUser();
 
     if (!session) {
@@ -756,12 +888,12 @@ export async function getPendingInvitations(): Promise<InvitationsState> {
         };
     }
 
-    const { supabase } = session;
-    const actor = await getActorMembership(supabase, session.user.id);
+    const { supabase, user } = session;
+    const actor = await getMembershipInOrg(supabase, user.id, targetOrganizationId);
 
     if (!actor) {
         return {
-            error: "No tienes una organización registrada.",
+            error: "No perteneces a esta organización.",
             success: null,
             data: null,
         };
@@ -847,17 +979,39 @@ export async function deleteInvitation(_prevState: MemberFormState, formData: Fo
         };
     }
 
-    const { supabase } = session;
-    const actor = await getActorMembership(supabase, session.user.id);
+    const { supabase, user } = session;
 
-    if (!actor) {
+    const { data: invitation, error: invitationError } = await supabase
+        .from("organization_invitations")
+        .select("id, organization_id")
+        .eq("id", invitationId)
+        .eq("status", true)
+        .maybeSingle();
+
+    if (invitationError) {
         return {
-            error: "No tienes una organización registrada.",
+            error: invitationError.message,
             success: null,
         };
     }
 
-    if (!canManageMembers(actor.roleName)) {
+    if (!invitation) {
+        return {
+            error: "La invitación no existe, ya fue revocada o no tienes permiso para revocarla.",
+            success: null,
+        };
+    }
+
+    const actor = await getMembershipInOrg(supabase, user.id, invitation.organization_id as string);
+
+    if (!actor) {
+        return {
+            error: "No perteneces a esta organización.",
+            success: null,
+        };
+    }
+
+    if (!canInviteMembers(actor.roleName)) {
         return {
             error: "No tienes permiso para revocar invitaciones.",
             success: null,
@@ -920,28 +1074,14 @@ export async function setMemberRole(_prevState: MemberFormState, formData: FormD
         };
     }
 
-    const { supabase } = session;
-    const actor = await getActorMembership(supabase, session.user.id);
+    const { supabase, user } = session;
 
-    if (!actor) {
-        return {
-            error: "No tienes una organización registrada.",
-            success: null,
-        };
-    }
-
-    if (!canManageMembers(actor.roleName)) {
-        return {
-            error: "No tienes permiso para cambiar roles.",
-            success: null,
-        };
-    }
-
+    // La policy de SELECT permite a cualquier miembro leer las filas de su
+    // organización; derivamos la organización del propio miembro objetivo.
     const { data: target, error: targetError } = await supabase
         .from("organization_members")
-        .select("id, user_id, role_id, roles(name)")
+        .select("id, user_id, role_id, organization_id, roles(name)")
         .eq("id", memberId)
-        .eq("organization_id", actor.organizationId)
         .maybeSingle();
 
     if (targetError) {
@@ -953,7 +1093,23 @@ export async function setMemberRole(_prevState: MemberFormState, formData: FormD
 
     if (!target) {
         return {
-            error: "El miembro no existe en tu organización.",
+            error: "El miembro no existe o no perteneces a su organización.",
+            success: null,
+        };
+    }
+
+    const actor = await getMembershipInOrg(supabase, user.id, target.organization_id as string);
+
+    if (!actor) {
+        return {
+            error: "No perteneces a esta organización.",
+            success: null,
+        };
+    }
+
+    if (!canManageMembers(actor.roleName)) {
+        return {
+            error: "No tienes permiso para cambiar roles.",
             success: null,
         };
     }
@@ -1038,28 +1194,12 @@ export async function deleteMember(_prevState: MemberFormState, formData: FormDa
         };
     }
 
-    const { supabase } = session;
-    const actor = await getActorMembership(supabase, session.user.id);
-
-    if (!actor) {
-        return {
-            error: "No tienes una organización registrada.",
-            success: null,
-        };
-    }
-
-    if (!canManageMembers(actor.roleName)) {
-        return {
-            error: "No tienes permiso para quitar miembros.",
-            success: null,
-        };
-    }
+    const { supabase, user } = session;
 
     const { data: target, error: targetError } = await supabase
         .from("organization_members")
-        .select("id, user_id, role_id, roles(name)")
+        .select("id, user_id, role_id, organization_id, roles(name)")
         .eq("id", memberId)
-        .eq("organization_id", actor.organizationId)
         .maybeSingle();
 
     if (targetError) {
@@ -1071,7 +1211,23 @@ export async function deleteMember(_prevState: MemberFormState, formData: FormDa
 
     if (!target) {
         return {
-            error: "El miembro no existe en tu organización.",
+            error: "El miembro no existe o no perteneces a su organización.",
+            success: null,
+        };
+    }
+
+    const actor = await getMembershipInOrg(supabase, user.id, target.organization_id as string);
+
+    if (!actor) {
+        return {
+            error: "No perteneces a esta organización.",
+            success: null,
+        };
+    }
+
+    if (!canManageMembers(actor.roleName)) {
+        return {
+            error: "No tienes permiso para quitar miembros.",
             success: null,
         };
     }
@@ -1142,12 +1298,27 @@ export async function getMemberBranchIds(memberId: string): Promise<MemberBranch
         };
     }
 
-    const { supabase } = session;
-    const actor = await getActorMembership(supabase, session.user.id);
+    const { supabase, user } = session;
+
+    const { data: target } = await supabase
+        .from("organization_members")
+        .select("id, organization_id")
+        .eq("id", targetMemberId)
+        .maybeSingle();
+
+    if (!target) {
+        return {
+            error: "El miembro no existe o no perteneces a su organización.",
+            success: null,
+            data: null,
+        };
+    }
+
+    const actor = await getMembershipInOrg(supabase, user.id, target.organization_id as string);
 
     if (!actor) {
         return {
-            error: "No tienes una organización registrada.",
+            error: "No perteneces a esta organización.",
             success: null,
             data: null,
         };
@@ -1156,21 +1327,6 @@ export async function getMemberBranchIds(memberId: string): Promise<MemberBranch
     if (!canManageMembers(actor.roleName)) {
         return {
             error: "No tienes permiso para revisar sucursales.",
-            success: null,
-            data: null,
-        };
-    }
-
-    const { data: target } = await supabase
-        .from("organization_members")
-        .select("id")
-        .eq("id", targetMemberId)
-        .eq("organization_id", actor.organizationId)
-        .maybeSingle();
-
-    if (!target) {
-        return {
-            error: "El miembro no existe en tu organización.",
             success: null,
             data: null,
         };
@@ -1217,12 +1373,26 @@ export async function setMemberBranches(memberId: string, branchIds: string[]): 
         };
     }
 
-    const { supabase } = session;
-    const actor = await getActorMembership(supabase, session.user.id);
+    const { supabase, user } = session;
+
+    const { data: target } = await supabase
+        .from("organization_members")
+        .select("id, organization_id")
+        .eq("id", targetMemberId)
+        .maybeSingle();
+
+    if (!target) {
+        return {
+            error: "El miembro no existe o no perteneces a su organización.",
+            success: null,
+        };
+    }
+
+    const actor = await getMembershipInOrg(supabase, user.id, target.organization_id as string);
 
     if (!actor) {
         return {
-            error: "No tienes una organización registrada.",
+            error: "No perteneces a esta organización.",
             success: null,
         };
     }
@@ -1230,20 +1400,6 @@ export async function setMemberBranches(memberId: string, branchIds: string[]): 
     if (!canManageMembers(actor.roleName)) {
         return {
             error: "No tienes permiso para asignar sucursales.",
-            success: null,
-        };
-    }
-
-    const { data: target } = await supabase
-        .from("organization_members")
-        .select("id")
-        .eq("id", targetMemberId)
-        .eq("organization_id", actor.organizationId)
-        .maybeSingle();
-
-    if (!target) {
-        return {
-            error: "El miembro no existe en tu organización.",
             success: null,
         };
     }
