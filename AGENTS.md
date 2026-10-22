@@ -59,6 +59,7 @@ Rutas actuales:
 | `/` | `src/app/(app)/page.tsx` | Home; solo muestra el nombre (pendiente enriquecer) |
 | `/profile` | `src/app/(app)/profile/` | Completo: perfil editable + organización (banner o formulario de alta) |
 | `/sucursales` | `src/app/(app)/sucursales/` | Completo: tabla de sucursales + crear/editar/eliminar |
+| `/sucursales/organizaciones` | `src/app/(app)/sucursales/organizaciones/page.tsx` | Completo: subpágina de solo lectura con todas las organizaciones a las que pertenece el usuario (org propia + invitaciones) |
 | `/miembros` | `src/app/(app)/miembros/` | Completo: lista de members, cambio/borrado, invitaciones con enlace copiable, asignación de sucursales |
 | `/invite/[token]` | `src/app/(auth)/invite/[token]/` | Completo: preview pública + botón manual de aceptación (respaldo; el alta normal es automática al confirmar el correo o iniciar sesión) |
 | `/confirmed` | `src/app/(auth)/confirmed/route.ts` | Completo: intercambia el código por sesión; si `next` es `/invite/<token>` acepta la invitación (auto-alta) y redirige a `/sucursales`; si no, regresa a `next` |
@@ -123,9 +124,11 @@ Patrones visuales canónicos (cópialos, no inventes otros):
 
 Tres grupos de archivos en `src/app/(app)/profile/`:
 
-- **`page.tsx`** (server): llama `getProfile()`, `getOrganization()` y `getMyMembership()`; calcula `firstName` / `lastName` / `displayName` / `initials` (fila de `profiles` con fallback a `user.user_metadata`) y pasa **primitivas** a los banners.
+- **`page.tsx`** (server): llama `getProfile()`, `getOrganization()` y `getMyMemberships()`; calcula `firstName` / `lastName` / `displayName` / `initials` (fila de `profiles` con fallback a `user.user_metadata`) y pasa **primitivas** a los banners. La sección de organizaciones tiene dos grupos: **Mi organización** (banner de la org propia o `OrganizationForm` si no tiene) y **Mis organizaciones** (las memberships donde la organización no es la propia, con badge de cargo y link a `/sucursales/organizaciones`; se oculta si queda vacía).
 - **`profile-banner.tsx` + `profile-form.tsx`** (client): card gris con avatar, nombre, correo y check verde si el correo está verificado; el lápiz abre el formulario (`insertUserInfo`, inputs con `defaultValue`, props `onCancel` / `onSuccess`).
-- **`organization-banner.tsx` + `organization-form.tsx`** (client): si el usuario todavía no tiene organización, muestra el formulario (`insertOrganization`); si existe, la card con nombre y slug. Si no es owner pero pertenece como member a una org, la card muestra esa org y su rol (sin formulario); el formulario solo aparece si no tiene org ni membership.
+- **`organization-banner.tsx` + `organization-form.tsx`** (client): si el usuario todavía no tiene organización propia, muestra el formulario (`insertOrganization`); si existe, la card con nombre y slug. Si no es owner pero pertenece como member a una org, la card muestra esa org y su rol **y además** se ofrece el formulario de alta (un member puede crear su propia organización).
+
+Los labels de rol (`getRoleLabel`) viven en `src/lib/role-labels.ts` y los comparten `/profile`, `/sucursales` y `/sucursales/organizaciones`.
 
 La acción `insertUserInfo` en `src/lib/actions/profiles.ts` valida sesión → `upsert` en `profiles` → `revalidatePath("/profile")` → devuelve el estado. `insertOrganization` en `organizations.ts` valida uniqueness (única org por owner) → `insert` → revalidate.
 
@@ -133,7 +136,8 @@ La acción `insertUserInfo` en `src/lib/actions/profiles.ts` valida sesión → 
 
 ## 8. Feature map: sucursales y miembros
 
-- **`/sucursales`**: `page.tsx` (server) llama `getOrganizationBranches()` + `getOrganization()` (para el nombre en el título). UI en `Table`, `BranchForm` (crear, `useActionState(insertOrganizationBranch)`) y `BranchRowMenu` (dropdown por fila → editar con `Dialog`/`updateOrganizationBranch`, eliminar con `AlertDialog`/`deleteOrganizationBranch`). Un member sin org propia (invitado) ve título + `MembershipBanner` con su org y cargo; sin formulario ni tabla (RLS no le permite leer `organizations_branches`).
+- **`/sucursales`**: `page.tsx` (server) llama `getOrganizationBranches()` + `getOrganization()` (para el nombre en el título). UI en `Table`, `BranchForm` (crear, `useActionState(insertOrganizationBranch)`) y `BranchRowMenu` (dropdown por fila → editar con `Dialog`/`updateOrganizationBranch`, eliminar con `AlertDialog`/`deleteOrganizationBranch`). Un member sin org propia (invitado) ve título + `MembershipBanner` con su org y cargo; sin formulario ni tabla (RLS no le permite leer `organizations_branches`). En ambos estados, si tiene memberships, aparece el link a **Mis organizaciones**.
+- **`/sucursales/organizaciones`** (subpágina, solo lectura): lista todas las organizaciones a las que pertenece el usuario (org propia + invitaciones aceptadas) con nombre, slug y badge de rol, usando `getMyMemberships` de `members.ts` y reutilizando `OrganizationBanner` del perfil. Sin acciones. Un usuario puede ser owner de su org y member de otra al mismo tiempo: `getActorMembership` prioriza siempre la org propia, así que `/sucursales` y `/miembros` operan sobre ella.
 - **`/miembros`**: `page.tsx` (server) resuelve la membresía del usuario (`getMyMembership`; usa `canManageMembers` = rol `owner` o `admin`) y carga en paralelo members, roles, invitaciones y sucursales (`Promise.all`).
   - `MembersTable`: badges de rol, `MemberRowMenu` → cambiar rol (`setMemberRole`), eliminar (`deleteMember` con `AlertDialog`), asignar sucursales (`MemberBranchesDialog`, checkbox por sucursal → `getMemberBranchIds` + `setMemberBranches`).
   - `InviteMemberDialog` → `insertInvitation` devuelve `{ token, inviteUrl }` (enlace `/invite/[token]` copiable con `navigator.clipboard`).
