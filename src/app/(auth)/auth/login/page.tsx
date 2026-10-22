@@ -1,74 +1,30 @@
-'use client'
+import { Suspense } from "react";
 
-import { signInWithEmail } from "@/lib/actions/auth";
-import Link from "next/link";
-import { useActionState } from "react";
+import { getSafeInternalPath } from "@/lib/redirects";
+import { LoginForm } from "./login-form";
 
-import { cn } from "cn"
-import { Button } from "@/components/ui/button"
-import { Card, CardContent } from "@/components/ui/card"
-import { Field, FieldDescription, FieldGroup, FieldLabel } from "@/components/ui/field"
-import { Input } from "@/components/ui/input"
-import { Alert, AlertDescription } from "@/components/ui/alert";
+function getSingleValue(value: string | string[] | undefined) {
+    if (Array.isArray(value)) {
+        return value[0] ?? "";
+    }
 
-export default function LoginPage() {
-    const [state, formAction, isPending] = useActionState(
-        signInWithEmail,
-        { error: null, success: null, }
-    );
+    return value ?? "";
+}
 
+export default function LoginPage({ searchParams }: PageProps<"/auth/login">) {
     return (
-        <div className={cn("flex flex-col gap-6")}>
-            <Card className="overflow-hidden p-0">
-                <CardContent className="grid p-0 md:grid-cols-2">
-                    <form action={formAction} className="p-6 md:p-8">
-                        <FieldGroup>
-                            <div className="flex flex-col items-center gap-2 text-center">
-                                <h1 className="text-2xl font-bold">MPSAAS</h1>
-                                <p className="text-balance text-muted-foreground">Inicia sesión para acceder a tu cuenta.</p>
-                            </div>
-
-                            <Field>
-                                <FieldLabel htmlFor="email">Correo</FieldLabel>
-                                <Input id="email" name="email" type="email" placeholder="hola@loquesea.com" autoComplete="email" required />
-                            </Field>
-
-                            <Field>
-                                <div className="flex items-center">
-                                    <FieldLabel htmlFor="password">Contraseña</FieldLabel>
-                                    <Link href="/auth/account/forgot-password" className="ml-auto text-sm underline-offset-2 hover:underline">¿Olvidaste tu contraseña?</Link>
-                                </div>
-                                <Input id="password" name="password" type="password" autoComplete="current-password" required />
-                            </Field>
-
-                            <Field>
-                                <Button disabled={isPending} type="submit">
-                                    {isPending && <span className="size-4 animate-spin rounded-full border-2 border-current border-r-transparent" />}
-                                    {isPending ? "Iniciando sesión..." : "Iniciar sesión"}
-                                </Button>
-                            </Field>
-
-                            {state.error && (
-                                <Alert className="p-0 border-none">
-                                    <AlertDescription className="text-red-600 font-medium">{state.error || 'Error en la contraseña o correo'}</AlertDescription>
-                                </Alert>
-                            )}
-
-                            <FieldDescription className="text-center">
-                                ¿No tienes una cuenta? <Link href="/auth/sign-up">Regístrate</Link>
-                            </FieldDescription>
-                        </FieldGroup>
-                    </form>
-
-                    <div className="relative hidden bg-muted md:block">
-                        <img
-                            src="https://ui.shadcn.com/placeholder.svg"
-                            alt="Image"
-                            className="absolute inset-0 h-full w-full object-cover dark:brightness-[0.2] dark:grayscale"
-                        />
-                    </div>
-                </CardContent>
-            </Card>
-        </div>
+        <Suspense fallback={<LoginForm email="" next="" />}>
+            <LoginContent searchParams={searchParams} />
+        </Suspense>
     );
+}
+
+async function LoginContent({
+    searchParams,
+}: Pick<PageProps<"/auth/login">, "searchParams">) {
+    const params = await searchParams;
+    const email = getSingleValue(params.email).trim();
+    const next = getSafeInternalPath(getSingleValue(params.next), "");
+
+    return <LoginForm email={email} next={next} />;
 }
