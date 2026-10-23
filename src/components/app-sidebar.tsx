@@ -25,13 +25,15 @@ import {
 } from "./ui/dropdown-menu";
 import Link from "next/link";
 import { Organization } from "@/lib/actions/organizations";
+import { isInventoryStaff } from "@/lib/inventory";
 
 type UserProps = {
     data: User | null | undefined;
     organization: Organization | null | undefined;
+    roleName: string | null;
 };
 
-export function AppSidebar({ data, organization }: UserProps) {
+export function AppSidebar({ data, organization, roleName }: UserProps) {
     const { isMobile } = useSidebar();
 
     const user = data?.user_metadata;
@@ -62,6 +64,19 @@ export function AppSidebar({ data, organization }: UserProps) {
                         </SidebarMenuItem>
                     </SidebarMenu>
                 </SidebarGroup>
+
+                {isInventoryStaff(roleName) && (
+                    <SidebarGroup>
+                        <SidebarGroupLabel>Inventario</SidebarGroupLabel>
+                        <SidebarMenu>
+                            <SidebarMenuItem>
+                                <SidebarMenuButton render={<Link href="/productos" className="w-full" />}>
+                                    Catálogo
+                                </SidebarMenuButton>
+                            </SidebarMenuItem>
+                        </SidebarMenu>
+                    </SidebarGroup>
+                )}
 
                 <SidebarGroup>
                     <SidebarGroupLabel>Equipo</SidebarGroupLabel>
