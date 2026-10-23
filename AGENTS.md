@@ -61,6 +61,7 @@ Rutas actuales:
 | `/sucursales` | `src/app/(app)/sucursales/` | Completo: tabla de sucursales + crear/editar/eliminar |
 | `/sucursales/organizaciones` | `src/app/(app)/sucursales/organizaciones/page.tsx` | Completo: subpágina de solo lectura con todas las organizaciones a las que pertenece el usuario (org propia + invitaciones) |
 | `/miembros` | `src/app/(app)/miembros/` | Completo: lista de members, cambio/borrado, invitaciones con enlace copiable, asignación de sucursales |
+| `/productos` | `src/app/(app)/productos/` | Completo: catálogo de productos e insumos con recetas, stock por sucursal, márgenes y gating staff (owner/admin/manager; vendedor redirigido) |
 | `/invite/[token]` | `src/app/(auth)/invite/[token]/` | Completo: preview pública + botón manual de aceptación (respaldo; el alta normal es automática al confirmar el correo o iniciar sesión) |
 | `/confirmed` | `src/app/(auth)/confirmed/route.ts` | Completo: intercambia el código por sesión; si `next` es `/invite/<token>` acepta la invitación (auto-alta) y redirige a `/sucursales`; si no, regresa a `next` |
 | `/auth/login` | `src/app/(auth)/auth/login/page.tsx` | Completo |
@@ -144,6 +145,15 @@ La acción `insertUserInfo` en `src/lib/actions/profiles.ts` valida sesión → 
   - `InviteMemberDialog` → `insertInvitation` recibe la organización por hidden input (`organizationId`) y devuelve `{ token, inviteUrl }` (enlace `/invite/[token]` copiable con `navigator.clipboard`). El formulario permite marcar **sucursales opcionales** (`branchId`): se guardan en `invitation_branches` y `accept_invitation` las copia al aceptar; si el insert de sucursales falla, la invitación se crea igual y se avisa (`warning`). Un `manager` solo puede invitar con rol gerente/vendedor y no ve la sección de sucursales (RLS no se las lista).
   - `InvitationsTable` → revocar (`deleteInvitation` con `AlertDialog`) y regenerar el enlace (`regenerateInvitation`; prop `canRegenerate` lo oculta a los managers). La columna **Registrarse** usa `get_pending_invitation_email_states` vía `getPendingInvitations`: ✓ verde = el correo no tiene cuenta (puede registrarse), ✗ rojo = ya existe una cuenta (debe iniciar sesión y aceptar); “–” si la RPC falla, no está disponible o el caller no es owner/admin.
 - El núcleo de aceptación vive en `src/lib/invitations.ts` (`acceptInvitationCore`: valida que la invitación exista, esté pendiente, no haya expirado y que el correo de la sesión coincida → `ensureProfile` → RPC `accept_invitation`). La aceptación es **automática**: al confirmar el correo (`/confirmed`) o al iniciar sesión con `next=/invite/...` (`signInWithEmail`); si sale bien redirige a `/sucursales` (donde el nuevo miembro ve su card) y si falla vuelve a `/invite/[token]`, donde el botón manual "Aceptar invitación" queda como respaldo.
+
+### Catálogo (`/productos`)
+
+- **Gating**: `page.tsx` (server) llama `getMyMembership()` y `isInventoryStaff(roleName)` (owner/admin/manager). Sin membresía o con `salesperson` redirige a `/`; un vendedor no puede entrar ni por URL. Las actions repiten el gating y RLS es la defensa final.
+- **Sidebar**: `(app)/layout.tsx` calcula `roleName` (owner si tiene organización propia; si no, el rol de su primera membresía) y se lo pasa a `AppSidebar`, que muestra **Inventario → Catálogo** solo a staff. Tanto la página como el layout priorizan la organización propia, igual que `/sucursales` y `/miembros`.
+- **Datos**: `getInventoryCatalog()` (`src/lib/actions/inventory.ts`) resuelve la organización del actor, valida el rol y devuelve `{ organizationName, roleName, items, branches, categories }`. Compone todo en una sola action: items + sucursales en paralelo, luego `item_stocks` + `item_recipes` por los ids de los items. Calcula en servidor `stockTotal`, `estimatedCost` (Σ cantidad × costo del insumo), `effectiveCost` (costo propio o estimado), `marginAmount`/`marginPercent` y `capacity` (mínimo `floor(stock / cantidad)` de la receta). No hay `getItemDetail` aparte: el detalle se renderiza con esos datos ya calculados.
+- **UI**: filtros por tipo con `?kind=product|supply`; `ProductFormDialog` (crear/editar; el tipo `kind` y el SKU quedan fijos tras crear; stock inicial opcional; receta dinámica; avisos si el ítem se crea pero falla el stock o la receta), `ItemDetailDialog` (stock por sucursal, receta, costo estimado y capacidad), `StockAdjustDialog` (si la sucursal no tiene fila de stock ofrece `initial`; después entrada/salida) y `ProductRowMenu` (detalle, editar, ajustar stock, activar/desactivar). **No se borran ítems en v1**: solo `status` activo/inactivo.
+- **Unidades y moneda**: las unidades se guardan como etiquetas visibles (`INVENTORY_UNITS` en `src/lib/inventory.ts`, compartido cliente/servidor); la moneda se asume MXN porque no hay columna de moneda.
+- **Límite conocido**: los managers pueden gestionar el catálogo, pero el SELECT de `organizations_branches` sigue siendo owner/admin, así que el selector de sucursal les llega vacío y no pueden registrar stock desde la UI (la RPC sí se lo autorizaría). Es deuda de DB, ver §13.8.
 
 ## 9. Componentes UI: Base UI, NO Radix
 
@@ -236,9 +246,10 @@ Helpers (`SECURITY DEFINER`, `search_path` fijado, llamables por RLS y por la ap
 - `is_org_owner_or_admin(p_organization_id uuid)` → owner por `owner_user_id` **o** member con rol `owner`/`admin`.
 - `is_org_member(p_organization_id uuid)` → delega en el anterior + member normal.
 - `is_org_manager(p_organization_id uuid)` → member con rol `manager` (agregado el 22-10-2026; solo lo usan las policies de invitaciones).
+- `is_org_staff(p_organization_id uuid)` → owner por `owner_user_id` **o** member con rol `owner`/`admin`/`manager` (agregado el 23-10-2026). Es el guard de las 11 policies de inventario y de `register_inventory_movement`.
 - `shares_organization(target_user_id uuid)` → comparte alguna organización vía `organization_members` (solo mira members, no owner_user_id).
 
-**Distinción clave**: el rol `owner` en `organization_members` **no** es lo mismo que `organizations.owner_user_id`. Los helpers tratan ambos como "nivel owner/admin". Las policies de sucursales siguen mirando solo `owner_user_id`; el SELECT de `organizations` ya acepta también members vía `is_org_member` (ver §13.4).
+**Distinción clave**: el rol `owner` en `organization_members` **no** es lo mismo que `organizations.owner_user_id`. Los helpers tratan ambos como "nivel owner/admin". Las policies de sucursales siguen mirando solo `owner_user_id`; el SELECT de `organizations` ya acepta también members vía `is_org_member` (ver §13.4). `is_org_staff` es el único helper que incluye a los managers (por eso el catálogo les funciona aunque las sucursales no).
 
 ### 13.3 Relaciones (versión de la jerarquía, no un grafo)
 
@@ -254,7 +265,18 @@ organization_members 1—N organizations_branch_members
 organizations_branches 1—N organizations_branch_members
 organization_invitations 1—N invitation_branches
 organizations_branches 1—N invitation_branches
+organizations 1—N inventory_items
+inventory_items 1—N item_recipes (como producto)
+inventory_items 1—N item_recipes (como insumo)
+inventory_items 1—N item_stocks
+organizations_branches 1—N item_stocks
+organizations 1—N inventory_movements
+inventory_items 1—N inventory_movements
+organizations_branches 1—N inventory_movements
 ```
+
+- En inventario, `inventory_items` se relaciona consigo misma dos veces: `item_recipes.product_item_id` (el producto) y `item_recipes.supply_item_id` (el insumo). Para embeber en PostgREST haría falta desambiguar por el nombre del constraint; la app evita el embed y resuelve las recetas en memoria (§13.7).
+- `item_stocks` **no tiene PK**: la unicidad la da `UNIQUE (item_id, branch_id)`. `item_recipes` sí tiene PK compuesta `(product_item_id, supply_item_id)`. Las cantidades llevan CHECK de no negatividad / positividad (ver §13.4).
 
 - Las FK de `user_id`/`owner_user_id` apuntan a **`profiles(id)`, no a `auth.users(id)`**: hay que hacerlo así para que PostgREST pueda embeber `profiles(first_name, last_name)`.
 - **Cascada destructiva**: borrar un `profiles` borra su `organization` si es owner, y de ahí members/branches/invitations (`ON DELETE CASCADE`).
@@ -361,6 +383,66 @@ RLS: activo con policies `select`/`insert`/`delete` para owner/admin de la organ
 
 RLS: SELECT libre para authenticated; **sin escritura** (el seed va por SQL/dashboard). El código usa los nombres `owner`, `admin`, `manager`, `salesperson` (labels en `miembros/page.tsx: ROLE_LABELS`).
 
+#### `inventory_items` (inventario fase 1, 23-10-2026)
+
+| Columna | Tipo | Default | Null | Notas |
+|---|---|---|---|---|
+| `id` | uuid | gen_random_uuid() | no | PK |
+| `organization_id` | uuid | — | no | FK → `organizations(id)` CASCADE |
+| `name` | text | — | no | |
+| `description` | text | — | sí | |
+| `kind` | text | — | no | CHECK `product`/`supply` |
+| `track_stock` | boolean | true | no | CHECK: si `kind = 'supply'` debe ser true |
+| `unit` | text | — | no | etiqueta visible; lista en `src/lib/inventory.ts` |
+| `sku` | text | — | sí | `PRD-XXXXXX`/`INS-XXXXXX`; único parcial por org |
+| `category` | text | — | sí | texto libre normalizado por la app |
+| `cost` | numeric(12,4) | — | sí | |
+| `sale_price` | numeric(12,2) | — | sí | |
+| `low_stock_threshold` | numeric(14,3) | — | sí | umbral para marcar stock bajo |
+| `status` | boolean | true | no | activo/inactivo; **la app sí lo usa** |
+| `created_at` | timestamptz | now() | no | |
+| `updated_at` | timestamptz | — | sí | trigger `inventory_items_set_updated_at` |
+
+Índices: `inventory_items_org_sku_key` UNIQUE parcial `(organization_id, sku) where sku is not null`; `inventory_items_organization_idx`. RLS: 4 policies `Inventory staff can view/create/update/delete items`, todas `to authenticated` y con `is_org_staff(organization_id)`. La app **no** borra ítems: usa `status` (la policy de DELETE existe, pero no hay UI).
+
+#### `item_recipes`
+
+| Columna | Tipo | Default | Null | Notas |
+|---|---|---|---|---|
+| `product_item_id` | uuid | — | no | PK/FK → `inventory_items(id)` CASCADE |
+| `supply_item_id` | uuid | — | no | PK/FK → `inventory_items(id)` CASCADE |
+| `quantity_per_unit` | numeric(14,6) | — | no | CHECK > 0 |
+
+PK compuesta `(product_item_id, supply_item_id)`; CHECK `product_item_id <> supply_item_id`; índice `item_recipes_supply_idx`. Sin `created_at`/`updated_at`. RLS: 4 policies `Inventory staff can view/create/update/delete recipes`, que derivan la organización del **producto** (`inventory_items.organization_id` del `product_item_id`). La app reemplaza la receta completa con borrar + insertar.
+
+#### `item_stocks`
+
+| Columna | Tipo | Default | Null | Notas |
+|---|---|---|---|---|
+| `item_id` | uuid | — | no | FK → `inventory_items(id)` CASCADE |
+| `branch_id` | uuid | — | no | FK → `organizations_branches(id)` CASCADE |
+| `quantity` | numeric(14,3) | 0 | no | CHECK >= 0 |
+| `created_at` | timestamptz | now() | no | |
+| `updated_at` | timestamptz | — | sí | trigger `item_stocks_set_updated_at` |
+
+**No tiene PK**; `UNIQUE (item_id, branch_id)` da la unicidad. RLS: **solo** policy `Inventory staff can view stock` (SELECT). `revoke insert, update, delete ... from authenticated`: el snapshot solo lo escribe `register_inventory_movement` (SECURITY DEFINER).
+
+#### `inventory_movements`
+
+| Columna | Tipo | Default | Null | Notas |
+|---|---|---|---|---|
+| `id` | uuid | gen_random_uuid() | no | PK |
+| `organization_id` | uuid | — | no | FK → `organizations(id)` CASCADE |
+| `item_id` | uuid | — | no | FK → `inventory_items(id)` CASCADE |
+| `branch_id` | uuid | — | no | FK → `organizations_branches(id)` CASCADE |
+| `movement_type` | text | — | no | CHECK `initial`/`adjustment_in`/`adjustment_out` |
+| `quantity` | numeric(14,3) | — | no | CHECK >= 0; `initial` permite 0, entradas/salidas exigen > 0 |
+| `note` | text | — | sí | |
+| `created_by` | uuid | — | sí | FK → `profiles(id)` ON DELETE SET NULL |
+| `created_at` | timestamptz | now() | no | |
+
+Índices `inventory_movements_item_branch_idx` e `inventory_movements_organization_idx`. RLS: policies `Inventory staff can view movements` (SELECT) e `Inventory staff can insert movements` (INSERT), con `is_org_staff(organization_id)`. `revoke update, delete ... from authenticated`: el libro es **append-only** y la app solo lo lee (las escrituras las hace la RPC).
+
 ### 13.5 Matriz RLS (quién puede escribir qué)
 
 | Tabla | SELECT | INSERT | UPDATE | DELETE |
@@ -373,6 +455,12 @@ RLS: SELECT libre para authenticated; **sin escritura** (el seed va por SQL/dash
 | `organization_invitations` | owner/admin + manager (su org) | owner/admin; manager solo con rol invitado manager/salesperson | owner/admin (solo `token_hash`/`expires_at` vía column-grant); manager ❌ | owner/admin + manager (su org) |
 | `invitation_branches` | owner/admin de la org de la invitación | owner/admin | ❌ | owner/admin |
 | `roles` | todos los authenticated | ❌ | ❌ | ❌ |
+| `inventory_items` | staff (`is_org_staff`) | staff | staff | staff (la app no lo usa) |
+| `item_recipes` | staff de la org del producto | staff de la org del producto | staff de la org del producto | staff de la org del producto |
+| `item_stocks` | staff | ❌ (solo RPC) | ❌ (solo RPC) | ❌ (solo RPC) |
+| `inventory_movements` | staff | staff (la app solo vía RPC) | ❌ (append-only) | ❌ (append-only) |
+
+> `staff` = `owner`/`admin`/`manager` vía `is_org_staff`. El vendedor no tiene ninguna policy en inventario.
 
 ### 13.6 Funciones RPC
 
@@ -387,6 +475,15 @@ RLS: SELECT libre para authenticated; **sin escritura** (el seed va por SQL/dash
     - Devuelve una fila por invitación **pendiente** (`status = true`) de la organización. ⚠️ **No filtra expiradas**: quien consuma los datos debe calcularlo con `expires_at` (en la app: `isInvitationExpired`).
     - `can_register` = `TRUE` si **no existe** ninguna fila en `auth.users` con ese email (comparación con `lower()`). Sirve para decidir si el flujo de invitación debe llevar a sign-up o a login. Solo mira `auth.users`, no `profiles`.
     - `SECURITY DEFINER` con el guard **dentro de la función**: `is_org_owner_or_admin(p_organization_id) or is_org_manager(p_organization_id)` en el WHERE (ampliado el 22-10-2026). Como salta RLS, sin ese guard cualquiera podría leer todas las invitaciones. Si el caller no es owner/admin/manager devuelve filas vacías (no lanza error). `search_path = 'auth', 'public'` porque consulta `auth.users` directamente.
+- **`register_inventory_movement(p_item_id uuid, p_branch_id uuid, p_type text, p_quantity numeric, p_note text default null) → uuid`** — única puerta de escritura de `item_stocks`. `SECURITY DEFINER`, `search_path = 'public'`, guarda `created_by = auth.uid()`.
+  1. Valida `p_type` ∈ `initial`/`adjustment_in`/`adjustment_out` (`invalid_movement_type`).
+  2. Valida cantidad: `initial` permite 0; entradas y salidas exigen > 0 (`invalid_quantity`).
+  3. Carga el ítem; errores `item_not_found`, `item_inactive` y `stock_not_tracked` (productos por encargo).
+  4. Exige `is_org_staff(organization_id)` (`not_authorized`) y que la sucursal pertenezca a la misma organización (`branch_not_in_org`).
+  5. `initial` solo se permite si no hay **ningún** movimiento previo de ese ítem+sucursal (`initial_already_set`).
+  6. Actualiza el snapshot: `adjustment_out` descuenta solo si hay saldo suficiente (`insufficient_stock`); `adjustment_in` suma; `initial` inserta y, en un conflicto, sobrescribe (el guard de historial lo impide en la práctica).
+  7. Inserta el movimiento y devuelve su `id`.
+  - La app la llama desde `adjustStock` y desde `createItem` (stock inicial opcional) y traduce los códigos con `INVENTORY_ERROR_MESSAGES` (`src/lib/actions/inventory.ts`).
 - Las dos que reciben `p_token_hash` esperan el **hash** SHA-256, no el token en sí (`randomBytes(32).toString("base64url")`): la app lo hashea con `hashInvitationToken` (`src/lib/actions/invitations.ts`) y el token original nunca llega a la DB.
 - **La app sí llama a las RPC de invitaciones** desde `src/lib/actions/invitations.ts` (pantalla `/invite/[token]`, en el grupo `(auth)`): preview con `get_invitation_by_token` y aceptación con `accept_invitation` (el definer hace el trabajo real: member + branches + marcar la invitación como usada). `get_pending_invitation_email_states` la llama `getPendingInvitations` (`src/lib/actions/members.ts`) para la columna “Registrarse”; si la RPC falla, la app muestra “–”. Desde el 22-10-2026 el guard admite también managers, así que el manager de la org ya ve ✓/✗ en esa columna.
 
@@ -398,6 +495,7 @@ RLS: SELECT libre para authenticated; **sin escritura** (el seed va por SQL/dash
 | `organizations.ts` | `organizations`, `organizations_branches` (CRUD de sucursales; owner-only) y `profiles` vía `ensureProfile` (INSERT si falta) |
 | `members.ts` | `organizations`, `organization_members`, `roles`, `organizations_branches`, `organization_invitations`, `organizations_branch_members` |
 | `invitations.ts` | RPC `get_invitation_by_token` + `accept_invitation` (escriben member/branches/invitación en la DB) y `profiles` vía `ensureProfile`; la aceptación real y sus validaciones viven en el núcleo `src/lib/invitations.ts` |
+| `inventory.ts` | `organizations` + `organization_members` (resolver org/rol), `inventory_items` (SELECT/INSERT/UPDATE; el borrado no se usa), `item_recipes` (SELECT + reemplazo delete/insert), `item_stocks` (solo SELECT; escritura vía RPC), `inventory_movements` (solo SELECT; la RPC inserta) y `organizations_branches` (solo SELECT para el selector) |
 
 `ensureProfile` vive en `src/lib/profiles.ts` (módulo utilitario, no `'use server'`) y lo comparten `insertOrganization` y `acceptInvitationCore`.
 
@@ -420,19 +518,25 @@ Bootstrap importante: `getActorMembership()` (en `members.ts`) crea **perezosame
 11. **`shares_organization` solo mira `organization_members`**: si un owner se borra de members pierde visibilidad de perfiles de su equipo.
 12. **Cascada destructiva** desde `profiles` (borrar el perfil del owner = borrar toda la organización). Confirmar intención.
 13. **Resuelto en parte: triggers de `updated_at`.** Desde el 22-10-2026 `set_updated_at()` corre en `before update` de `organizations` y `organizations_branches`. `profiles.updated_at` sigue sin trigger.
+14. **Manager vs. sucursales (deuda activa de inventario).** `is_org_staff` le da al manager acceso al catálogo y la RPC le permitiría mover stock, pero el SELECT de `organizations_branches` sigue limitado a owner/admin. Por eso `getInventoryCatalog` le devuelve `branches: []`, el selector de sucursal no le aparece y los nombres de stock caen al fallback "Sucursal". Para cerrarlo hay que ampliar la policy SELECT de sucursales a staff (o crear una de lectura para manager) sin tocar las de escritura, que siguen owner-only.
+15. **`inventory_items.status` sí se usa** (a diferencia del `status` decorativo de organizations/branches/members): la app lista activos e inactivos, permite reactivarlos y la RPC rechaza movimientos de un ítem inactivo (`item_inactive`). En v1 no se borran ítems, solo se desactivan.
+16. **Borrar un ítem en DB es destructivo.** El `ON DELETE CASCADE` se lleva sus recetas (como producto y como insumo), su stock y sus movimientos. Como un insumo puede estar en recetas de varios productos, borrarlo elimina esas líneas. La app no expone DELETE; si se agrega, decidir antes si se bloquea cuando está en uso.
+17. **El stock y el libro se escriben juntos solo por la RPC.** `item_stocks` tiene los grants de escritura revocados y `inventory_movements` es append-only para `authenticated`; la app nunca inserta/actualiza directo. La policy de INSERT de movimientos existe, pero usarla por fuera de la RPC rompería la consistencia snapshot/libro.
 
 ### 13.9 Verificaciones ejecutadas (sin pendientes)
 
 - DDL de `profiles` e `organization_invitations` confirmado por query el 22-10-2026; las tablas de §13.4 reflejan el esquema real.
-- RLS activo (`relrowsecurity = true`) en las 8 tablas de `public`, ninguna con `FORCE ROW LEVEL SECURITY` (el `service_role` bypassa por diseño; los usuarios pasan por policies).
+- DDL de las 4 tablas de inventario confirmado por query el 23-10-2026 (columnas, tipos, defaults, FKs y checks), incluida la RPC `register_inventory_movement` y las 11 policies de staff.
+- RLS activo (`relrowsecurity = true`) en las 12 tablas de `public`, ninguna con `FORCE ROW LEVEL SECURITY` (el `service_role` bypassa por diseño; los usuarios pasan por policies).
 - Guard de `get_pending_invitation_email_states` ampliado a owner/admin **o** manager: el manager ya ve la columna "Registrarse".
-- Policies de `public` auditadas con `pg_policies` el 22-10-2026: coinciden con §13.5. Se quitó el default `gen_random_uuid()` de `organizations.owner_user_id` y se limitaron por column-grant los UPDATE de `organizations` (`name`) y `organization_invitations` (`token_hash`, `expires_at`).
+- Policies de `public` auditadas con `pg_policies` el 22-10-2026 y las de inventario el 23-10-2026: coinciden con §13.5. Se quitó el default `gen_random_uuid()` de `organizations.owner_user_id` y se limitaron por column-grant los UPDATE de `organizations` (`name`) y `organization_invitations` (`token_hash`, `expires_at`).
+- Inventario fase 1: `pnpm exec tsc --noEmit`, ESLint y `pnpm build` pasan; `/productos` sin sesión responde `307` hacia `/auth/login` (el gating de rol se probó en código; la prueba manual autenticada queda pendiente).
 
 ## 14. Estado actual
 
-**Completo:** auth (login, sign-up, recuperación y actualización de contraseña, error de cuenta, confirmación), sidebar con menú de usuario, perfil editable, alta de organización desde `/profile`, CRUD de sucursales, gestión de miembros multi-organización (selector `?org=` con gating por rol en `/miembros`; roles, borrado, invitaciones con enlace copiable y sucursales preasignadas, asignación de sucursales), auto-alta de invitados al confirmar el correo o iniciar sesión con el enlace de invitación, sesión de Supabase vía proxy, home con dashboard de cards (resumen de organización, sucursales, miembros, invitaciones y accesos rápidos).
+**Completo:** auth (login, sign-up, recuperación y actualización de contraseña, error de cuenta, confirmación), sidebar con menú de usuario, perfil editable, alta de organización desde `/profile`, CRUD de sucursales, gestión de miembros multi-organización (selector `?org=` con gating por rol en `/miembros`; roles, borrado, invitaciones con enlace copiable y sucursales preasignadas, asignación de sucursales), auto-alta de invitados al confirmar el correo o iniciar sesión con el enlace de invitación, sesión de Supabase vía proxy, home con dashboard de cards (resumen de organización, sucursales, miembros, invitaciones y accesos rápidos), catálogo de inventario `/productos` (productos e insumos, SKU, recetas, stock por sucursal vía RPC, márgenes/capacidad y gating owner/admin/manager; el vendedor no entra).
 
-**Pendiente:** la `metadata` de los layouts raíz (texto de create-next-app), el `README.md`, y las deudas de DB de §13.8.
+**Pendiente:** la prueba manual autenticada de `/productos` con owner/manager/vendedor, la fase 2 de inventario (ventas, compras y transferencias), la deuda de sucursales para managers (§13.8.14), la `metadata` de los layouts raíz (texto de create-next-app), el `README.md`, y las deudas de DB de §13.8.
 
 ## 15. Reglas de trabajo
 
